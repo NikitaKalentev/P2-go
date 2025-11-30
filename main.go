@@ -333,11 +333,15 @@ func validateResourceMap(resourceMap *yaml.Node) []ValidationError {
 
 			switch key.Value {
 			case "cpu":
-				// Упрощенная проверка CPU - только проверка что это число
-				if value.Value == "" {
+				// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Проверяем, что CPU - это число без кавычек
+				// В YAML числа без кавычек имеют тег "!!int", строки в кавычках - "!!str"
+				if value.Tag != "!!int" {
 					errors = append(errors, ValidationError{Line: value.Line, Message: ErrCPUMustBeInt})
 				} else {
-					if _, err := strconv.Atoi(value.Value); err != nil {
+					// Дополнительная проверка, что значение не пустое и является числом
+					if value.Value == "" {
+						errors = append(errors, ValidationError{Line: value.Line, Message: ErrCPUMustBeInt})
+					} else if _, err := strconv.Atoi(value.Value); err != nil {
 						errors = append(errors, ValidationError{Line: value.Line, Message: ErrCPUMustBeInt})
 					}
 				}
@@ -456,8 +460,13 @@ func validateHTTPGet(httpGet *yaml.Node) []ValidationError {
 		portNum, err := strconv.Atoi(port.Value)
 		if err != nil {
 			errors = append(errors, ValidationError{Line: port.Line, Message: "port must be int"})
-		} else if portNum <= 0 || portNum >= 65536 {
-			errors = append(errors, ValidationError{Line: port.Line, Message: ErrPortOutOfRange})
+		} else {
+			// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Явная проверка отрицательных значений
+			if portNum <= 0 {
+				errors = append(errors, ValidationError{Line: port.Line, Message: ErrPortOutOfRange})
+			} else if portNum >= 65536 {
+				errors = append(errors, ValidationError{Line: port.Line, Message: ErrPortOutOfRange})
+			}
 		}
 	}
 
