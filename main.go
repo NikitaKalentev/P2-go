@@ -80,28 +80,28 @@ func validateTopLevel(doc *yaml.Node) []ValidationError {
 
 	// apiVersion
 	if apiVersion, exists := fields["apiVersion"]; !exists {
-		errors = append(errors, ValidationError{Line: 1, Message: "apiVersion is required"})
+		errors = append(errors, ValidationError{Line: doc.Line, Message: "apiVersion is required"})
 	} else if apiVersion.Value != "v1" {
 		errors = append(errors, ValidationError{Line: apiVersion.Line, Message: fmt.Sprintf("apiVersion has unsupported value '%s'", apiVersion.Value)})
 	}
 
 	// kind
 	if kind, exists := fields["kind"]; !exists {
-		errors = append(errors, ValidationError{Line: 1, Message: "kind is required"})
+		errors = append(errors, ValidationError{Line: doc.Line, Message: "kind is required"})
 	} else if kind.Value != "Pod" {
 		errors = append(errors, ValidationError{Line: kind.Line, Message: fmt.Sprintf("kind has unsupported value '%s'", kind.Value)})
 	}
 
 	// metadata
 	if metadata, exists := fields["metadata"]; !exists {
-		errors = append(errors, ValidationError{Line: 1, Message: "metadata is required"})
+		errors = append(errors, ValidationError{Line: doc.Line, Message: "metadata is required"})
 	} else {
 		errors = append(errors, validateMetadata(metadata)...)
 	}
 
 	// spec
 	if spec, exists := fields["spec"]; !exists {
-		errors = append(errors, ValidationError{Line: 1, Message: "spec is required"})
+		errors = append(errors, ValidationError{Line: doc.Line, Message: "spec is required"})
 	} else {
 		errors = append(errors, validateSpec(spec)...)
 	}
@@ -125,7 +125,6 @@ func validateMetadata(metadata *yaml.Node) []ValidationError {
 		}
 	}
 
-	// name
 	if name, exists := fields["name"]; !exists {
 		errors = append(errors, ValidationError{Line: metadata.Line, Message: "name is required"})
 	} else if strings.TrimSpace(name.Value) == "" {
@@ -151,7 +150,7 @@ func validateSpec(spec *yaml.Node) []ValidationError {
 		}
 	}
 
-	// os
+	// os - ВАЖНО: проверяем существование поля os
 	if os, exists := fields["os"]; exists {
 		if os.Value != "linux" && os.Value != "windows" {
 			errors = append(errors, ValidationError{Line: os.Line, Message: fmt.Sprintf("os has unsupported value '%s'", os.Value)})
@@ -190,10 +189,10 @@ func validateContainer(container *yaml.Node) []ValidationError {
 		}
 	}
 
-	// name
+	// name - ВАЖНО: исправлена проверка пустого имени
 	if name, exists := fields["name"]; !exists {
 		errors = append(errors, ValidationError{Line: container.Line, Message: "name is required"})
-	} else if strings.TrimSpace(name.Value) == "" {
+	} else if name.Value == "" {
 		errors = append(errors, ValidationError{Line: name.Line, Message: "name is required"})
 	} else if !snakeCaseRegex.MatchString(name.Value) {
 		errors = append(errors, ValidationError{Line: name.Line, Message: fmt.Sprintf("name has invalid format '%s'", name.Value)})
