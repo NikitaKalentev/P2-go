@@ -172,10 +172,10 @@ func validateContainer(container *yaml.Node) []ValidationError {
 		}
 	}
 
-	// name
+	// name - ИСПРАВЛЕНО: проверяем что имя не пустое
 	if name, exists := fields["name"]; !exists {
 		errors = append(errors, ValidationError{Line: container.Line, Message: "name is required"})
-	} else if name.Value == "" {
+	} else if strings.TrimSpace(name.Value) == "" {
 		errors = append(errors, ValidationError{Line: name.Line, Message: "name is required"})
 	} else if !snakeCaseRegex.MatchString(name.Value) {
 		errors = append(errors, ValidationError{Line: name.Line, Message: fmt.Sprintf("name has invalid format '%s'", name.Value)})
@@ -250,16 +250,17 @@ func validateResourceMap(resourceMap *yaml.Node) []ValidationError {
 
 			switch key.Value {
 			case "cpu":
-				// Исправлено: принимаем как числа, так и строки с числами
+				// ИСПРАВЛЕНО: принимаем как числа, так и строки с числами
 				cpuVal := strings.TrimSpace(value.Value)
-				if _, err := strconv.Atoi(cpuVal); err != nil {
+				if cpuVal == "" {
+					errors = append(errors, ValidationError{Line: value.Line, Message: "cpu must be int"})
+				} else if _, err := strconv.Atoi(cpuVal); err != nil {
 					errors = append(errors, ValidationError{Line: value.Line, Message: "cpu must be int"})
 				}
 			case "memory":
 				if !memoryRegex.MatchString(value.Value) {
 					errors = append(errors, ValidationError{Line: value.Line, Message: fmt.Sprintf("memory has invalid format '%s'", value.Value)})
 				} else {
-					// Исправлено: проверяем что число > 0
 					numStr := value.Value[:len(value.Value)-2]
 					if num, err := strconv.Atoi(numStr); err != nil || num <= 0 {
 						errors = append(errors, ValidationError{Line: value.Line, Message: "memory value out of range"})
