@@ -40,10 +40,6 @@ func main() {
 		for _, err := range errors {
 			fmt.Fprintf(os.Stderr, "%s:%d %s\n", filename, err.Line, err.Message)
 		}
-		// Принудительно сбрасываем stderr
-		if f, ok := os.Stderr.(*os.File); ok {
-			f.Sync()
-		}
 		os.Exit(1)
 	}
 }
