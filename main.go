@@ -48,6 +48,8 @@ func validateFile(filename string) error {
 
 	errors := validateYAML(&root)
 	if len(errors) > 0 {
+		// DEBUG: Print to see what errors we found
+		fmt.Fprintf(os.Stderr, "DEBUG: Found %d errors\n", len(errors))
 		for _, err := range errors {
 			fmt.Fprintf(os.Stderr, "%s:%d %s\n", filename, err.Line, err.Message)
 		}
