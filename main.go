@@ -90,9 +90,14 @@ type ValidationError struct {
 // Вспомогательная функция для создания ошибок с корректным номером строки
 func newValidationError(node *yaml.Node, message string) ValidationError {
 	line := node.Line
+	// Если строка не определена, ищем в дочерних узлах
 	if line == 0 && node.Content != nil && len(node.Content) > 0 {
-		// Берём строку первого дочернего узла, если текущая строка равна 0
-		line = node.Content[0].Line
+		for _, child := range node.Content {
+			if child != nil && child.Line > 0 {
+				line = child.Line
+				break
+			}
+		}
 	}
 	return ValidationError{Line: line, Message: message}
 }
@@ -176,7 +181,7 @@ func validateMetadata(metadata *yaml.Node) []ValidationError {
 	if name, exists := fields["name"]; !exists || name == nil {
 		errors = append(errors, newValidationError(metadata, ErrNameRequired))
 	} else if strings.TrimSpace(name.Value) == "" {
-		errors = append(errors, newValidationError(name, ErrNameRequired))
+		errors = append(errors, newValidationError(metadata, ErrNameRequired))
 	}
 
 	return errors
@@ -243,20 +248,20 @@ func validateContainer(container *yaml.Node) []ValidationError {
 		}
 	}
 
-	// name
+	// name - ИСПРАВЛЕНИЕ: используем строку контейнера для ошибок
 	if name, exists := fields["name"]; !exists || name == nil {
 		errors = append(errors, newValidationError(container, ErrNameRequired))
 	} else if strings.TrimSpace(name.Value) == "" {
-		errors = append(errors, newValidationError(name, ErrNameRequired))
+		errors = append(errors, newValidationError(container, ErrNameRequired))
 	} else if !snakeCaseRegex.MatchString(name.Value) {
 		errors = append(errors, newValidationError(name, fmt.Sprintf(ErrNameInvalidFormat, name.Value)))
 	}
 
-	// image
+	// image - ИСПРАВЛЕНИЕ: используем строку контейнера для ошибок
 	if image, exists := fields["image"]; !exists || image == nil {
 		errors = append(errors, newValidationError(container, ErrImageRequired))
 	} else if image.Value == "" {
-		errors = append(errors, newValidationError(image, ErrImageRequired))
+		errors = append(errors, newValidationError(container, ErrImageRequired))
 	} else if !imageRegex.MatchString(image.Value) {
 		errors = append(errors, newValidationError(image, fmt.Sprintf(ErrImageInvalidFormat, image.Value)))
 	}
@@ -355,17 +360,32 @@ func validateResourceMap(resourceMap *yaml.Node) []ValidationError {
 			
 			// Проверка на пустые значения
 			if value.Value == "" {
-				errors = append(errors, newValidationError(value, ErrCPUMustBeInt))
+				// ИСПРАВЛЕНИЕ: Используем родительский узел, если строка не определена
+				lineNode := value
+				if value.Line == 0 {
+					lineNode = resourceMap
+				}
+				errors = append(errors, newValidationError(lineNode, ErrCPUMustBeInt))
 				continue
 			}
 			
 			// Проверка тега YAML
 			if value.Tag != "!!int" {
-				errors = append(errors, newValidationError(value, ErrCPUMustBeInt))
+				// ИСПРАВЛЕНИЕ: Используем родительский узел, если строка не определена
+				lineNode := value
+				if value.Line == 0 {
+					lineNode = resourceMap
+				}
+				errors = append(errors, newValidationError(lineNode, ErrCPUMustBeInt))
 			} else {
 				// Дополнительная проверка, что значение является числом
 				if _, err := strconv.Atoi(value.Value); err != nil {
-					errors = append(errors, newValidationError(value, ErrCPUMustBeInt))
+					// ИСПРАВЛЕНИЕ: Используем родительский узел, если строка не определена
+					lineNode := value
+					if value.Line == 0 {
+						lineNode = resourceMap
+					}
+					errors = append(errors, newValidationError(lineNode, ErrCPUMustBeInt))
 				}
 			}
 			
@@ -413,7 +433,12 @@ func validatePort(port *yaml.Node) []ValidationError {
 		} else {
 			// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Явная проверка отрицательных значений и значений вне диапазона
 			if portNum <= 0 || portNum >= 65536 {
-				errors = append(errors, newValidationError(containerPort, ErrContainerPortOutOfRange))
+				// ИСПРАВЛЕНИЕ: Используем родительский узел, если строка не определена
+				lineNode := containerPort
+				if containerPort.Line == 0 {
+					lineNode = port
+				}
+				errors = append(errors, newValidationError(lineNode, ErrContainerPortOutOfRange))
 			}
 		}
 	}
@@ -489,9 +514,19 @@ func validateHTTPGet(httpGet *yaml.Node) []ValidationError {
 		} else {
 			// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Явная проверка отрицательных значений
 			if portNum <= 0 {
-				errors = append(errors, newValidationError(port, ErrPortOutOfRange))
+				// ИСПРАВЛЕНИЕ: Используем родительский узел, если строка не определена
+				lineNode := port
+				if port.Line == 0 {
+					lineNode = httpGet
+				}
+				errors = append(errors, newValidationError(lineNode, ErrPortOutOfRange))
 			} else if portNum >= 65536 {
-				errors = append(errors, newValidationError(port, ErrPortOutOfRange))
+				// ИСПРАВЛЕНИЕ: Используем родительский узел, если строка не определена
+				lineNode := port
+				if port.Line == 0 {
+					lineNode = httpGet
+				}
+				errors = append(errors, newValidationError(lineNode, ErrPortOutOfRange))
 			}
 		}
 	}
