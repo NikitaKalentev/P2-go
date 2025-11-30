@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/yourname/yamlvalid" // замените на реальный путь, если нужно
 	"gopkg.in/yaml.v3"
 )
 
@@ -24,12 +23,11 @@ func main() {
 
 	var root yaml.Node
 	if err := yaml.Unmarshal(content, &root); err != nil {
-		// yaml.v3 не предоставляет строку с ошибкой — делаем костыль через строку
 		fmt.Fprintf(os.Stderr, "%s: cannot parse YAML: %v\n", filepath, err)
 		os.Exit(1)
 	}
 
-	if err := yamlvalid.ValidatePod(filepath, &root); err != nil {
+	if err := ValidatePod(filepath, &root); err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 		os.Exit(1)
 	}

@@ -1,4 +1,4 @@
-package yamlvalid
+package main
 
 import (
 	"fmt"
@@ -47,6 +47,9 @@ func ValidatePod(filepath string, root *yaml.Node) error {
 	for i := 0; i < len(doc.Content); i += 2 {
 		keyNode := doc.Content[i]
 		valNode := doc.Content[i+1]
+		if i+1 >= len(doc.Content) {
+			return NewValidationError(filepath, keyNode.Line, "malformed mapping: missing value for key")
+		}
 		fields[keyNode.Value] = valNode
 	}
 
@@ -94,6 +97,9 @@ func validateObjectMeta(filepath string, node *yaml.Node) error {
 	for i := 0; i < len(node.Content); i += 2 {
 		keyNode := node.Content[i]
 		valNode := node.Content[i+1]
+		if i+1 >= len(node.Content) {
+			return NewValidationError(filepath, keyNode.Line, "malformed metadata mapping")
+		}
 		fields[keyNode.Value] = valNode
 	}
 
@@ -117,6 +123,9 @@ func validateObjectMeta(filepath string, node *yaml.Node) error {
 			return NewValidationError(filepath, labelsNode.Line, "metadata.labels must be a mapping")
 		}
 		for i := 0; i < len(labelsNode.Content); i += 2 {
+			if i+1 >= len(labelsNode.Content) {
+				return NewValidationError(filepath, labelsNode.Line, "malformed metadata.labels mapping")
+			}
 			valNode := labelsNode.Content[i+1]
 			if valNode.Kind != yaml.ScalarNode || valNode.Tag != "!!str" {
 				return NewValidationError(filepath, valNode.Line, "metadata.labels value must be string")
@@ -136,6 +145,9 @@ func validatePodSpec(filepath string, node *yaml.Node) error {
 	for i := 0; i < len(node.Content); i += 2 {
 		keyNode := node.Content[i]
 		valNode := node.Content[i+1]
+		if i+1 >= len(node.Content) {
+			return NewValidationError(filepath, keyNode.Line, "malformed spec mapping")
+		}
 		fields[keyNode.Value] = valNode
 	}
 
@@ -173,6 +185,9 @@ func validatePodOS(filepath string, node *yaml.Node) error {
 	for i := 0; i < len(node.Content); i += 2 {
 		keyNode := node.Content[i]
 		valNode := node.Content[i+1]
+		if i+1 >= len(node.Content) {
+			return NewValidationError(filepath, keyNode.Line, "malformed spec.os mapping")
+		}
 		fields[keyNode.Value] = valNode
 	}
 
@@ -197,6 +212,9 @@ func validateContainer(filepath string, node *yaml.Node, idx int) error {
 	for i := 0; i < len(node.Content); i += 2 {
 		keyNode := node.Content[i]
 		valNode := node.Content[i+1]
+		if i+1 >= len(node.Content) {
+			return NewValidationError(filepath, keyNode.Line, fmt.Sprintf("malformed spec.containers[%d] mapping", idx))
+		}
 		fields[keyNode.Value] = valNode
 	}
 
@@ -217,11 +235,13 @@ func validateContainer(filepath string, node *yaml.Node, idx int) error {
 	} else if !strings.HasPrefix(imgNode.Value, "registry.bigbrother.io/") {
 		return NewValidationError(filepath, imgNode.Line, fmt.Sprintf("spec.containers[%d].image has invalid format '%s'", idx, imgNode.Value))
 	} else {
-		parts := strings.Split(imgNode.Value[len("registry.bigbrother.io/"):], ":")
+		rest := imgNode.Value[len("registry.bigbrother.io/"):]
+		parts := strings.Split(rest, ":")
 		if len(parts) < 2 {
 			return NewValidationError(filepath, imgNode.Line, fmt.Sprintf("spec.containers[%d].image has invalid format '%s' (missing tag)", idx, imgNode.Value))
 		}
-		if parts[len(parts)-1] == "" {
+		tag := parts[len(parts)-1]
+		if tag == "" {
 			return NewValidationError(filepath, imgNode.Line, fmt.Sprintf("spec.containers[%d].image has invalid format '%s' (empty tag)", idx, imgNode.Value))
 		}
 	}
@@ -271,6 +291,9 @@ func validateContainerPort(filepath string, node *yaml.Node, containerIdx, portI
 	for i := 0; i < len(node.Content); i += 2 {
 		keyNode := node.Content[i]
 		valNode := node.Content[i+1]
+		if i+1 >= len(node.Content) {
+			return NewValidationError(filepath, keyNode.Line, fmt.Sprintf("malformed spec.containers[%d].ports[%d] mapping", containerIdx, portIdx))
+		}
 		fields[keyNode.Value] = valNode
 	}
 
@@ -311,6 +334,9 @@ func validateProbe(filepath string, node *yaml.Node, fieldPath string) error {
 	for i := 0; i < len(node.Content); i += 2 {
 		keyNode := node.Content[i]
 		valNode := node.Content[i+1]
+		if i+1 >= len(node.Content) {
+			return NewValidationError(filepath, keyNode.Line, fmt.Sprintf("malformed %s mapping", fieldPath))
+		}
 		fields[keyNode.Value] = valNode
 	}
 
@@ -333,6 +359,9 @@ func validateHTTPGetAction(filepath string, node *yaml.Node, fieldPath string) e
 	for i := 0; i < len(node.Content); i += 2 {
 		keyNode := node.Content[i]
 		valNode := node.Content[i+1]
+		if i+1 >= len(node.Content) {
+			return NewValidationError(filepath, keyNode.Line, fmt.Sprintf("malformed %s mapping", fieldPath))
+		}
 		fields[keyNode.Value] = valNode
 	}
 
@@ -372,6 +401,9 @@ func validateResourceRequirements(filepath string, node *yaml.Node, containerIdx
 	for i := 0; i < len(node.Content); i += 2 {
 		keyNode := node.Content[i]
 		valNode := node.Content[i+1]
+		if i+1 >= len(node.Content) {
+			return NewValidationError(filepath, keyNode.Line, fmt.Sprintf("malformed spec.containers[%d].resources mapping", containerIdx))
+		}
 		fields[keyNode.Value] = valNode
 	}
 
@@ -384,6 +416,9 @@ func validateResourceRequirements(filepath string, node *yaml.Node, containerIdx
 		}
 
 		for i := 0; i < len(resourceNode.Content); i += 2 {
+			if i+1 >= len(resourceNode.Content) {
+				return NewValidationError(filepath, resourceNode.Line, fmt.Sprintf("malformed spec.containers[%d].resources.%s mapping", containerIdx, field))
+			}
 			keyNode := resourceNode.Content[i]
 			valNode := resourceNode.Content[i+1]
 			switch keyNode.Value {
