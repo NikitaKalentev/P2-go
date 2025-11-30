@@ -250,12 +250,11 @@ func validateResourceMap(resourceMap *yaml.Node) []ValidationError {
 
 			switch key.Value {
 			case "cpu":
-				// ИСПРАВЛЕНО: убрана проверка для CPU - принимаем любые значения
-				// В Kubernetes CPU может быть строкой ("2", "100m", "0.5" и т.д.)
-				// Для упрощения принимаем любые непустые значения
+				// ПРОСТАЯ ПРОВЕРКА: CPU должен быть непустым
 				if value.Value == "" {
 					errors = append(errors, ValidationError{Line: value.Line, Message: "cpu value is required"})
 				}
+				// Убрана сложная проверка - принимаем любые непустые значения
 			case "memory":
 				if !memoryRegex.MatchString(value.Value) {
 					errors = append(errors, ValidationError{Line: value.Line, Message: fmt.Sprintf("memory has invalid format '%s'", value.Value)})
