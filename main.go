@@ -11,10 +11,10 @@ import (
 )
 
 type Pod struct {
-	APIVersion string            `yaml:"apiVersion"`
-	Kind       string            `yaml:"kind"`
-	Metadata   Metadata          `yaml:"metadata"`
-	Spec       PodSpec           `yaml:"spec"`
+	APIVersion string   `yaml:"apiVersion"`
+	Kind       string   `yaml:"kind"`
+	Metadata   Metadata `yaml:"metadata"`
+	Spec       PodSpec  `yaml:"spec"`
 }
 
 type Metadata struct {
@@ -29,17 +29,17 @@ type PodSpec struct {
 }
 
 type Container struct {
-	Name         string              `yaml:"name"`
-	Image        string              `yaml:"image"`
-	Ports        []ContainerPort     `yaml:"ports,omitempty"`
-	ReadinessProbe *Probe            `yaml:"readinessProbe,omitempty"`
-	LivenessProbe  *Probe            `yaml:"livenessProbe,omitempty"`
-	Resources    ResourceRequirements `yaml:"resources"`
+	Name           string               `yaml:"name"`
+	Image          string               `yaml:"image"`
+	Ports          []ContainerPort      `yaml:"ports,omitempty"`
+	ReadinessProbe *Probe               `yaml:"readinessProbe,omitempty"`
+	LivenessProbe  *Probe               `yaml:"livenessProbe,omitempty"`
+	Resources      ResourceRequirements `yaml:"resources"`
 }
 
 type ContainerPort struct {
 	ContainerPort int    `yaml:"containerPort"`
-	Protocol     string `yaml:"protocol,omitempty"`
+	Protocol      string `yaml:"protocol,omitempty"`
 }
 
 type Probe struct {
@@ -69,32 +69,29 @@ func main() {
 	}
 
 	filename := os.Args[1]
-	content, err := os.ReadFile(filename)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading file: %v\n", err)
-		os.Exit(1)
-	}
-
-	var root yaml.Node
-	if err := yaml.Unmarshal(content, &root); err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing YAML: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := validateYAML(filename, &root); err != nil {
+	if err := validateFile(filename); err != nil {
 		os.Exit(1)
 	}
 }
 
-func validateYAML(filename string, root *yaml.Node) error {
-	var pod Pod
-	content, _ := os.ReadFile(filename)
-	if err := yaml.Unmarshal(content, &pod); err != nil {
-		fmt.Fprintf(os.Stderr, "Error unmarshaling YAML: %v\n", err)
+func validateFile(filename string) error {
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading file: %v\n", err)
 		return err
 	}
 
-	// Validate top-level fields
+	var pod Pod
+	if err := yaml.Unmarshal(content, &pod); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing YAML: %v\n", err)
+		return err
+	}
+
+	return validatePod(pod)
+}
+
+func validatePod(pod Pod) error {
+	// Validate apiVersion
 	if pod.APIVersion == "" {
 		fmt.Fprintf(os.Stderr, "apiVersion is required\n")
 		return fmt.Errorf("validation failed")
@@ -104,6 +101,7 @@ func validateYAML(filename string, root *yaml.Node) error {
 		return fmt.Errorf("validation failed")
 	}
 
+	// Validate kind
 	if pod.Kind == "" {
 		fmt.Fprintf(os.Stderr, "kind is required\n")
 		return fmt.Errorf("validation failed")
