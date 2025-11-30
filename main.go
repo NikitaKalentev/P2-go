@@ -69,31 +69,39 @@ func validateTopLevel(doc *yaml.Node) []ValidationError {
 		return []ValidationError{{Line: doc.Line, Message: "Invalid YAML structure"}}
 	}
 
-	fields := getFields(doc)
-
-	// Проверка обязательных полей верхнего уровня
-	if _, exists := fields["apiVersion"]; !exists {
-		errors = append(errors, ValidationError{Line: doc.Line, Message: "apiVersion is required"})
-	} else if fields["apiVersion"].Value != "v1" {
-		errors = append(errors, ValidationError{Line: fields["apiVersion"].Line, Message: fmt.Sprintf("apiVersion has unsupported value '%s'", fields["apiVersion"].Value)})
+	// Создаем карту полей для быстрого доступа
+	fields := make(map[string]*yaml.Node)
+	for i := 0; i < len(doc.Content); i += 2 {
+		if i+1 < len(doc.Content) {
+			key := doc.Content[i]
+			value := doc.Content[i+1]
+			fields[key.Value] = value
+		}
 	}
 
-	if _, exists := fields["kind"]; !exists {
-		errors = append(errors, ValidationError{Line: doc.Line, Message: "kind is required"})
-	} else if fields["kind"].Value != "Pod" {
-		errors = append(errors, ValidationError{Line: fields["kind"].Line, Message: fmt.Sprintf("kind has unsupported value '%s'", fields["kind"].Value)})
+	// Проверяем обязательные поля
+	if apiVersion, exists := fields["apiVersion"]; !exists {
+		errors = append(errors, ValidationError{Line: 1, Message: "apiVersion is required"})
+	} else if apiVersion.Value != "v1" {
+		errors = append(errors, ValidationError{Line: apiVersion.Line, Message: fmt.Sprintf("apiVersion has unsupported value '%s'", apiVersion.Value)})
 	}
 
-	if _, exists := fields["metadata"]; !exists {
-		errors = append(errors, ValidationError{Line: doc.Line, Message: "metadata is required"})
+	if kind, exists := fields["kind"]; !exists {
+		errors = append(errors, ValidationError{Line: 1, Message: "kind is required"})
+	} else if kind.Value != "Pod" {
+		errors = append(errors, ValidationError{Line: kind.Line, Message: fmt.Sprintf("kind has unsupported value '%s'", kind.Value)})
+	}
+
+	if metadata, exists := fields["metadata"]; !exists {
+		errors = append(errors, ValidationError{Line: 1, Message: "metadata is required"})
 	} else {
-		errors = append(errors, validateMetadata(fields["metadata"])...)
+		errors = append(errors, validateMetadata(metadata)...)
 	}
 
-	if _, exists := fields["spec"]; !exists {
-		errors = append(errors, ValidationError{Line: doc.Line, Message: "spec is required"})
+	if spec, exists := fields["spec"]; !exists {
+		errors = append(errors, ValidationError{Line: 1, Message: "spec is required"})
 	} else {
-		errors = append(errors, validateSpec(fields["spec"])...)
+		errors = append(errors, validateSpec(spec)...)
 	}
 
 	return errors
@@ -106,7 +114,15 @@ func validateMetadata(metadata *yaml.Node) []ValidationError {
 		return []ValidationError{{Line: metadata.Line, Message: "metadata must be a mapping"}}
 	}
 
-	fields := getFields(metadata)
+	fields := make(map[string]*yaml.Node)
+	for i := 0; i < len(metadata.Content); i += 2 {
+		if i+1 < len(metadata.Content) {
+			key := metadata.Content[i]
+			value := metadata.Content[i+1]
+			fields[key.Value] = value
+		}
+	}
+
 	if name, exists := fields["name"]; !exists {
 		errors = append(errors, ValidationError{Line: metadata.Line, Message: "name is required"})
 	} else if name.Value == "" {
@@ -123,38 +139,33 @@ func validateSpec(spec *yaml.Node) []ValidationError {
 		return []ValidationError{{Line: spec.Line, Message: "spec must be a mapping"}}
 	}
 
-	fields := getFields(spec)
+	fields := make(map[string]*yaml.Node)
+	for i := 0; i < len(spec.Content); i += 2 {
+		if i+1 < len(spec.Content) {
+			key := spec.Content[i]
+			value := spec.Content[i+1]
+			fields[key.Value] = value
+		}
+	}
 
-	// os
+	// Проверяем os
 	if os, exists := fields["os"]; exists {
 		if os.Value != "linux" && os.Value != "windows" {
 			errors = append(errors, ValidationError{Line: os.Line, Message: fmt.Sprintf("os has unsupported value '%s'", os.Value)})
 		}
 	}
 
-	// containers
+	// Проверяем containers
 	if containers, exists := fields["containers"]; !exists {
 		errors = append(errors, ValidationError{Line: spec.Line, Message: "containers is required"})
+	} else if containers.Kind != yaml.SequenceNode {
+		errors = append(errors, ValidationError{Line: containers.Line, Message: "containers must be a list"})
+	} else if len(containers.Content) == 0 {
+		errors = append(errors, ValidationError{Line: containers.Line, Message: "containers is required"})
 	} else {
-		errors = append(errors, validateContainers(containers)...)
-	}
-
-	return errors
-}
-
-func validateContainers(containers *yaml.Node) []ValidationError {
-	var errors []ValidationError
-
-	if containers.Kind != yaml.SequenceNode {
-		return []ValidationError{{Line: containers.Line, Message: "containers must be a list"}}
-	}
-
-	if len(containers.Content) == 0 {
-		return []ValidationError{{Line: containers.Line, Message: "containers is required"}}
-	}
-
-	for _, container := range containers.Content {
-		errors = append(errors, validateContainer(container)...)
+		for _, container := range containers.Content {
+			errors = append(errors, validateContainer(container)...)
+		}
 	}
 
 	return errors
@@ -167,9 +178,16 @@ func validateContainer(container *yaml.Node) []ValidationError {
 		return []ValidationError{{Line: container.Line, Message: "container must be a mapping"}}
 	}
 
-	fields := getFields(container)
+	fields := make(map[string]*yaml.Node)
+	for i := 0; i < len(container.Content); i += 2 {
+		if i+1 < len(container.Content) {
+			key := container.Content[i]
+			value := container.Content[i+1]
+			fields[key.Value] = value
+		}
+	}
 
-	// name
+	// Проверяем name
 	if name, exists := fields["name"]; !exists {
 		errors = append(errors, ValidationError{Line: container.Line, Message: "name is required"})
 	} else if name.Value == "" {
@@ -178,7 +196,7 @@ func validateContainer(container *yaml.Node) []ValidationError {
 		errors = append(errors, ValidationError{Line: name.Line, Message: fmt.Sprintf("name has invalid format '%s'", name.Value)})
 	}
 
-	// image
+	// Проверяем image
 	if image, exists := fields["image"]; !exists {
 		errors = append(errors, ValidationError{Line: container.Line, Message: "image is required"})
 	} else if image.Value == "" {
@@ -187,24 +205,28 @@ func validateContainer(container *yaml.Node) []ValidationError {
 		errors = append(errors, ValidationError{Line: image.Line, Message: fmt.Sprintf("image has invalid format '%s'", image.Value)})
 	}
 
-	// resources
+	// Проверяем resources
 	if resources, exists := fields["resources"]; !exists {
 		errors = append(errors, ValidationError{Line: container.Line, Message: "resources is required"})
 	} else {
 		errors = append(errors, validateResources(resources)...)
 	}
 
-	// ports
+	// Проверяем ports если есть
 	if ports, exists := fields["ports"]; exists {
-		errors = append(errors, validatePorts(ports)...)
+		if ports.Kind == yaml.SequenceNode {
+			for _, port := range ports.Content {
+				errors = append(errors, validatePort(port)...)
+			}
+		}
 	}
 
-	// readinessProbe
+	// Проверяем readinessProbe если есть
 	if probe, exists := fields["readinessProbe"]; exists {
 		errors = append(errors, validateProbe(probe)...)
 	}
 
-	// livenessProbe
+	// Проверяем livenessProbe если есть
 	if probe, exists := fields["livenessProbe"]; exists {
 		errors = append(errors, validateProbe(probe)...)
 	}
@@ -219,12 +241,21 @@ func validateResources(resources *yaml.Node) []ValidationError {
 		return []ValidationError{{Line: resources.Line, Message: "resources must be a mapping"}}
 	}
 
-	fields := getFields(resources)
+	fields := make(map[string]*yaml.Node)
+	for i := 0; i < len(resources.Content); i += 2 {
+		if i+1 < len(resources.Content) {
+			key := resources.Content[i]
+			value := resources.Content[i+1]
+			fields[key.Value] = value
+		}
+	}
 
+	// Проверяем requests если есть
 	if requests, exists := fields["requests"]; exists {
 		errors = append(errors, validateResourceMap(requests)...)
 	}
 
+	// Проверяем limits если есть
 	if limits, exists := fields["limits"]; exists {
 		errors = append(errors, validateResourceMap(limits)...)
 	}
@@ -239,40 +270,34 @@ func validateResourceMap(resourceMap *yaml.Node) []ValidationError {
 		return []ValidationError{{Line: resourceMap.Line, Message: "resource map must be a mapping"}}
 	}
 
-	fields := getFields(resourceMap)
+	for i := 0; i < len(resourceMap.Content); i += 2 {
+		if i+1 < len(resourceMap.Content) {
+			key := resourceMap.Content[i]
+			value := resourceMap.Content[i+1]
 
-	for key, value := range fields {
-		switch key {
-		case "cpu":
-			if _, err := strconv.Atoi(value.Value); err != nil {
-				errors = append(errors, ValidationError{Line: value.Line, Message: "cpu must be int"})
-			}
-		case "memory":
-			if !memoryRegex.MatchString(value.Value) {
-				errors = append(errors, ValidationError{Line: value.Line, Message: fmt.Sprintf("memory has invalid format '%s'", value.Value)})
-			} else {
-				numStr := value.Value[:len(value.Value)-2]
-				if num, err := strconv.Atoi(numStr); err != nil || num <= 0 {
-					errors = append(errors, ValidationError{Line: value.Line, Message: "memory value out of range"})
+			switch key.Value {
+			case "cpu":
+				// CPU должен быть целым числом
+				if value.Value == "" {
+					errors = append(errors, ValidationError{Line: value.Line, Message: "cpu must be int"})
+				} else {
+					if _, err := strconv.Atoi(value.Value); err != nil {
+						errors = append(errors, ValidationError{Line: value.Line, Message: "cpu must be int"})
+					}
 				}
+			case "memory":
+				if !memoryRegex.MatchString(value.Value) {
+					errors = append(errors, ValidationError{Line: value.Line, Message: fmt.Sprintf("memory has invalid format '%s'", value.Value)})
+				} else {
+					numStr := value.Value[:len(value.Value)-2]
+					if num, err := strconv.Atoi(numStr); err != nil || num <= 0 {
+						errors = append(errors, ValidationError{Line: value.Line, Message: "memory value out of range"})
+					}
+				}
+			default:
+				errors = append(errors, ValidationError{Line: key.Line, Message: fmt.Sprintf("%s has unsupported value", key.Value)})
 			}
-		default:
-			errors = append(errors, ValidationError{Line: value.Line, Message: fmt.Sprintf("%s has unsupported value", key)})
 		}
-	}
-
-	return errors
-}
-
-func validatePorts(ports *yaml.Node) []ValidationError {
-	var errors []ValidationError
-
-	if ports.Kind != yaml.SequenceNode {
-		return []ValidationError{{Line: ports.Line, Message: "ports must be a list"}}
-	}
-
-	for _, port := range ports.Content {
-		errors = append(errors, validatePort(port)...)
 	}
 
 	return errors
@@ -282,10 +307,17 @@ func validatePort(port *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	if port.Kind != yaml.MappingNode {
-		return []ValidationError{{Line: port.Line, Message: "port must be a mapping"}}
+		return []ValidationError{{Line: port.Line, Message: "port must be a mapping"})
 	}
 
-	fields := getFields(port)
+	fields := make(map[string]*yaml.Node)
+	for i := 0; i < len(port.Content); i += 2 {
+		if i+1 < len(port.Content) {
+			key := port.Content[i]
+			value := port.Content[i+1]
+			fields[key.Value] = value
+		}
+	}
 
 	if containerPort, exists := fields["containerPort"]; !exists {
 		errors = append(errors, ValidationError{Line: port.Line, Message: "containerPort is required"})
@@ -311,10 +343,17 @@ func validateProbe(probe *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	if probe.Kind != yaml.MappingNode {
-		return []ValidationError{{Line: probe.Line, Message: "probe must be a mapping"}}
+		return []ValidationError{{Line: probe.Line, Message: "probe must be a mapping"})
 	}
 
-	fields := getFields(probe)
+	fields := make(map[string]*yaml.Node)
+	for i := 0; i < len(probe.Content); i += 2 {
+		if i+1 < len(probe.Content) {
+			key := probe.Content[i]
+			value := probe.Content[i+1]
+			fields[key.Value] = value
+		}
+	}
 
 	if httpGet, exists := fields["httpGet"]; !exists {
 		errors = append(errors, ValidationError{Line: probe.Line, Message: "httpGet is required"})
@@ -329,10 +368,17 @@ func validateHTTPGet(httpGet *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	if httpGet.Kind != yaml.MappingNode {
-		return []ValidationError{{Line: httpGet.Line, Message: "httpGet must be a mapping"}}
+		return []ValidationError{{Line: httpGet.Line, Message: "httpGet must be a mapping"})
 	}
 
-	fields := getFields(httpGet)
+	fields := make(map[string]*yaml.Node)
+	for i := 0; i < len(httpGet.Content); i += 2 {
+		if i+1 < len(httpGet.Content) {
+			key := httpGet.Content[i]
+			value := httpGet.Content[i+1]
+			fields[key.Value] = value
+		}
+	}
 
 	if path, exists := fields["path"]; !exists {
 		errors = append(errors, ValidationError{Line: httpGet.Line, Message: "path is required"})
@@ -354,21 +400,4 @@ func validateHTTPGet(httpGet *yaml.Node) []ValidationError {
 	}
 
 	return errors
-}
-
-// Вспомогательная функция для получения полей из mapping node
-func getFields(node *yaml.Node) map[string]*yaml.Node {
-	fields := make(map[string]*yaml.Node)
-	if node.Kind != yaml.MappingNode {
-		return fields
-	}
-
-	for i := 0; i < len(node.Content); i += 2 {
-		if i+1 < len(node.Content) {
-			key := node.Content[i]
-			value := node.Content[i+1]
-			fields[key.Value] = value
-		}
-	}
-	return fields
 }
