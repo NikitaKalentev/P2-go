@@ -107,15 +107,7 @@ func (v *Validator) validatePodSpec(node *yaml.Node) {
 	}
 
 	if osNode, exists := fields["os"]; exists {
-		if osNode.Kind == yaml.ScalarNode {
-			// Обработка случая когда os задан как строка (как в тесте)
-			if osNode.Value != "linux" && osNode.Value != "windows" {
-				v.addError(osNode.Line, "os", fmt.Sprintf("has unsupported value '%s'", osNode.Value))
-			}
-		} else if osNode.Kind == yaml.MappingNode {
-			// Обработка случая когда os задан как объект
-			v.validatePodOS(osNode)
-		}
+		v.validatePodOS(osNode)
 	}
 
 	if containers, exists := fields["containers"]; !exists {
@@ -126,6 +118,18 @@ func (v *Validator) validatePodSpec(node *yaml.Node) {
 }
 
 func (v *Validator) validatePodOS(node *yaml.Node) {
+	// Если os задан как скаляр (строка), это ошибка - должен быть объект
+	if node.Kind == yaml.ScalarNode {
+		v.addError(node.Line, "os", fmt.Sprintf("has unsupported value '%s'", node.Value))
+		return
+	}
+
+	// Если это не объект, выходим
+	if node.Kind != yaml.MappingNode {
+		v.addError(node.Line, "os", "must be object")
+		return
+	}
+
 	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(node.Content); i += 2 {
 		if i+1 >= len(node.Content) {
@@ -139,13 +143,18 @@ func (v *Validator) validatePodOS(node *yaml.Node) {
 	if name, exists := fields["name"]; !exists {
 		v.addError(node.Line, "spec.os.name", "is required")
 	} else if name.Value != "linux" && name.Value != "windows" {
-		v.addError(name.Line, "spec.os.name", fmt.Sprintf("has unsupported value '%s'", name.Value))
+		v.addError(name.Line, "os", fmt.Sprintf("has unsupported value '%s'", name.Value))
 	}
 }
 
 func (v *Validator) validateContainers(node *yaml.Node) {
 	if node.Kind != yaml.SequenceNode {
 		v.addError(node.Line, "spec.containers", "must be array")
+		return
+	}
+
+	if len(node.Content) == 0 {
+		v.addError(node.Line, "spec.containers", "must contain at least one container")
 		return
 	}
 
@@ -166,20 +175,24 @@ func (v *Validator) validateContainers(node *yaml.Node) {
 		if name, exists := fields["name"]; !exists {
 			v.addError(containerNode.Line, "spec.containers[].name", "is required")
 		} else {
-			if containerNames[name.Value] {
+			if name.Kind != yaml.ScalarNode || name.Value == "" {
+				v.addError(name.Line, "spec.containers[].name", "is required")
+			} else if containerNames[name.Value] {
 				v.addError(name.Line, "spec.containers[].name", "must be unique within pod")
+			} else {
+				containerNames[name.Value] = true
 			}
-			containerNames[name.Value] = true
 		}
 
 		// Проверка image
 		if image, exists := fields["image"]; !exists {
 			v.addError(containerNode.Line, "spec.containers[].image", "is required")
 		} else {
-			if !strings.HasPrefix(image.Value, "registry.bigbrother.io/") {
+			if image.Kind != yaml.ScalarNode || image.Value == "" {
+				v.addError(image.Line, "spec.containers[].image", "is required")
+			} else if !strings.HasPrefix(image.Value, "registry.bigbrother.io/") {
 				v.addError(image.Line, "spec.containers[].image", fmt.Sprintf("has invalid format '%s'", image.Value))
-			}
-			if !strings.Contains(image.Value, ":") {
+			} else if !strings.Contains(image.Value, ":") {
 				v.addError(image.Line, "spec.containers[].image", fmt.Sprintf("has invalid format '%s'", image.Value))
 			}
 		}
@@ -249,6 +262,11 @@ func (v *Validator) validateContainerPorts(node *yaml.Node) {
 }
 
 func (v *Validator) validateProbe(node *yaml.Node, probeType string) {
+	if node.Kind != yaml.MappingNode {
+		v.addError(node.Line, fmt.Sprintf("spec.containers[].%s", probeType), "must be object")
+		return
+	}
+
 	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(node.Content); i += 2 {
 		if i+1 >= len(node.Content) {
@@ -267,6 +285,11 @@ func (v *Validator) validateProbe(node *yaml.Node, probeType string) {
 }
 
 func (v *Validator) validateHTTPGetAction(node *yaml.Node, probeType string) {
+	if node.Kind != yaml.MappingNode {
+		v.addError(node.Line, fmt.Sprintf("spec.containers[].%s.httpGet", probeType), "must be object")
+		return
+	}
+
 	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(node.Content); i += 2 {
 		if i+1 >= len(node.Content) {
@@ -279,7 +302,7 @@ func (v *Validator) validateHTTPGetAction(node *yaml.Node, probeType string) {
 
 	if path, exists := fields["path"]; !exists {
 		v.addError(node.Line, fmt.Sprintf("spec.containers[].%s.httpGet.path", probeType), "is required")
-	} else if path.Value == "" || !strings.HasPrefix(path.Value, "/") {
+	} else if path.Kind != yaml.ScalarNode || path.Value == "" || !strings.HasPrefix(path.Value, "/") {
 		v.addError(path.Line, fmt.Sprintf("spec.containers[].%s.httpGet.path", probeType), "must be absolute path")
 	}
 
@@ -300,6 +323,11 @@ func (v *Validator) validateHTTPGetAction(node *yaml.Node, probeType string) {
 }
 
 func (v *Validator) validateResourceRequirements(node *yaml.Node) {
+	if node.Kind != yaml.MappingNode {
+		v.addError(node.Line, "spec.containers[].resources", "must be object")
+		return
+	}
+
 	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(node.Content); i += 2 {
 		if i+1 >= len(node.Content) {
@@ -320,6 +348,11 @@ func (v *Validator) validateResourceRequirements(node *yaml.Node) {
 }
 
 func (v *Validator) validateResourceObject(node *yaml.Node, resourceType string) {
+	if node.Kind != yaml.MappingNode {
+		v.addError(node.Line, fmt.Sprintf("spec.containers[].resources.%s", resourceType), "must be object")
+		return
+	}
+
 	memoryRegex := regexp.MustCompile(`^\d+(Gi|Mi|Ki)$`)
 
 	fields := make(map[string]*yaml.Node)
@@ -373,6 +406,11 @@ func main() {
 	validator := &Validator{file: filePath}
 
 	// Валидируем каждый документ в YAML файле
+	if len(root.Content) == 0 {
+		fmt.Fprintf(os.Stderr, "%s: empty document\n", filePath)
+		os.Exit(1)
+	}
+
 	for _, doc := range root.Content {
 		if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
 			validator.validateTopLevel(doc.Content[0])
@@ -388,6 +426,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println("YAML validation successful!")
+	// При успешной валидации НЕ выводим сообщение, просто выходим с кодом 0
 	os.Exit(0)
 }
