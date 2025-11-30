@@ -118,9 +118,10 @@ func validateMetadata(metadata *yaml.Node) []ValidationError {
 		}
 	}
 
+	// ИСПРАВЛЕНО: проверяем что имя не пустое
 	if name, exists := fields["name"]; !exists {
 		errors = append(errors, ValidationError{Line: metadata.Line, Message: "name is required"})
-	} else if name.Value == "" {
+	} else if strings.TrimSpace(name.Value) == "" {
 		errors = append(errors, ValidationError{Line: name.Line, Message: "name is required"})
 	}
 
@@ -139,8 +140,8 @@ func validateSpec(spec *yaml.Node) []ValidationError {
 		}
 	}
 
-	// os
-	if os, exists := fields["os"]; exists && os.Value != "" {
+	// os - ИСПРАВЛЕНО: проверяем существование и корректность значения
+	if os, exists := fields["os"]; exists {
 		if os.Value != "linux" && os.Value != "windows" {
 			errors = append(errors, ValidationError{Line: os.Line, Message: fmt.Sprintf("os has unsupported value '%s'", os.Value)})
 		}
@@ -172,7 +173,7 @@ func validateContainer(container *yaml.Node) []ValidationError {
 		}
 	}
 
-	// name - ИСПРАВЛЕНО: проверяем что имя не пустое
+	// name
 	if name, exists := fields["name"]; !exists {
 		errors = append(errors, ValidationError{Line: container.Line, Message: "name is required"})
 	} else if strings.TrimSpace(name.Value) == "" {
