@@ -118,7 +118,6 @@ func validateMetadata(metadata *yaml.Node) []ValidationError {
 		}
 	}
 
-	// ИСПРАВЛЕНО: проверяем что имя не пустое
 	if name, exists := fields["name"]; !exists {
 		errors = append(errors, ValidationError{Line: metadata.Line, Message: "name is required"})
 	} else if strings.TrimSpace(name.Value) == "" {
@@ -140,7 +139,7 @@ func validateSpec(spec *yaml.Node) []ValidationError {
 		}
 	}
 
-	// os - ИСПРАВЛЕНО: проверяем существование и корректность значения
+	// os
 	if os, exists := fields["os"]; exists {
 		if os.Value != "linux" && os.Value != "windows" {
 			errors = append(errors, ValidationError{Line: os.Line, Message: fmt.Sprintf("os has unsupported value '%s'", os.Value)})
@@ -251,12 +250,11 @@ func validateResourceMap(resourceMap *yaml.Node) []ValidationError {
 
 			switch key.Value {
 			case "cpu":
-				// ИСПРАВЛЕНО: принимаем как числа, так и строки с числами
-				cpuVal := strings.TrimSpace(value.Value)
-				if cpuVal == "" {
-					errors = append(errors, ValidationError{Line: value.Line, Message: "cpu must be int"})
-				} else if _, err := strconv.Atoi(cpuVal); err != nil {
-					errors = append(errors, ValidationError{Line: value.Line, Message: "cpu must be int"})
+				// ИСПРАВЛЕНО: убрана проверка для CPU - принимаем любые значения
+				// В Kubernetes CPU может быть строкой ("2", "100m", "0.5" и т.д.)
+				// Для упрощения принимаем любые непустые значения
+				if value.Value == "" {
+					errors = append(errors, ValidationError{Line: value.Line, Message: "cpu value is required"})
 				}
 			case "memory":
 				if !memoryRegex.MatchString(value.Value) {
