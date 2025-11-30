@@ -1,29 +1,45 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
-	"https://github.com/NikitaKalentev/P2-go/validator"
+	"github.com/NikitaKalentev/P2-go/pod"
+	"github.com/NikitaKalentev/P2-go/structure"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		panic("usage: yamlvalid <filename>")
+	var code = 0
+	var errors []string
+	defer func() {
+		os.Exit(code)
+	}()
+
+	if len(os.Args) <= 1 {
+		errors = append(errors, "first argument is required")
+	} else {
+		filename := os.Args[1]
+		if _, err := os.Stat(filename); err != nil {
+			errors = append(errors, "could not read yaml file")
+		} else {
+			abspath, err := filepath.Abs(filename)
+			if err == nil {
+				filename = abspath
+			}
+
+			validator := structure.NewValidator(pod.NewPod())
+			if validator.AcceptFile(filename) {
+				validator.Validate()
+			}
+			errors = validator.GetErrors()
+		}
 	}
 
-	filename := os.Args[1]
-
-	_, err := os.Stat(filename)
-
-	if errors.Is(err, os.ErrNotExist) {
-		panic(fmt.Sprintf("%s does not exist", filename))
-	}
-
-	if errs := validator.Run(filename); len(errs) != 0 {
-		for _, err := range errs {
-			fmt.Println(err)
+	if len(errors) > 0 {
+		code = -1
+		for _, text := range errors {
+			fmt.Println(text)
 		}
 	}
 }
