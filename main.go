@@ -147,32 +147,36 @@ func validateContainer(containerNode *yaml.Node) []ValidationError {
 	nameNode := findNode(containerNode, "name")
 	if nameNode == nil {
 		errors = append(errors, ValidationError{Line: containerNode.Line, Message: "name is required"})
-	} else if nameNode.Value == "" {
-		errors = append(errors, ValidationError{
-			Line:    nameNode.Line,
-			Message: "name is required",
-		})
-	} else if !snakeCaseRegex.MatchString(nameNode.Value) {
-		errors = append(errors, ValidationError{
-			Line:    nameNode.Line,
-			Message: fmt.Sprintf("name has invalid format '%s'", nameNode.Value),
-		})
+	} else {
+		if nameNode.Value == "" {
+			errors = append(errors, ValidationError{
+				Line:    nameNode.Line,
+				Message: "name is required",
+			})
+		} else if !snakeCaseRegex.MatchString(nameNode.Value) {
+			errors = append(errors, ValidationError{
+				Line:    nameNode.Line,
+				Message: fmt.Sprintf("name has invalid format '%s'", nameNode.Value),
+			})
+		}
 	}
 
 	// Validate container image
 	imageNode := findNode(containerNode, "image")
 	if imageNode == nil {
 		errors = append(errors, ValidationError{Line: containerNode.Line, Message: "image is required"})
-	} else if imageNode.Value == "" {
-		errors = append(errors, ValidationError{
-			Line:    imageNode.Line,
-			Message: "image is required",
-		})
-	} else if !imageRegex.MatchString(imageNode.Value) {
-		errors = append(errors, ValidationError{
-			Line:    imageNode.Line,
-			Message: fmt.Sprintf("image has invalid format '%s'", imageNode.Value),
-		})
+	} else {
+		if imageNode.Value == "" {
+			errors = append(errors, ValidationError{
+				Line:    imageNode.Line,
+				Message: "image is required",
+			})
+		} else if !imageRegex.MatchString(imageNode.Value) {
+			errors = append(errors, ValidationError{
+				Line:    imageNode.Line,
+				Message: fmt.Sprintf("image has invalid format '%s'", imageNode.Value),
+			})
+		}
 	}
 
 	// Validate resources
@@ -253,16 +257,18 @@ func validateProbe(probeNode *yaml.Node) []ValidationError {
 		pathNode := findNode(httpGetNode, "path")
 		if pathNode == nil {
 			errors = append(errors, ValidationError{Line: httpGetNode.Line, Message: "path is required"})
-		} else if pathNode.Value == "" {
-			errors = append(errors, ValidationError{
-				Line:    pathNode.Line,
-				Message: "path is required",
-			})
-		} else if !strings.HasPrefix(pathNode.Value, "/") {
-			errors = append(errors, ValidationError{
-				Line:    pathNode.Line,
-				Message: fmt.Sprintf("path has invalid format '%s'", pathNode.Value),
-			})
+		} else {
+			if pathNode.Value == "" {
+				errors = append(errors, ValidationError{
+					Line:    pathNode.Line,
+					Message: "path is required",
+				})
+			} else if !strings.HasPrefix(pathNode.Value, "/") {
+				errors = append(errors, ValidationError{
+					Line:    pathNode.Line,
+					Message: fmt.Sprintf("path has invalid format '%s'", pathNode.Value),
+				})
+			}
 		}
 
 		portNode := findNode(httpGetNode, "port")
