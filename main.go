@@ -10,50 +10,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type Pod struct {
-	APIVersion string   `yaml:"apiVersion"`
-	Kind       string   `yaml:"kind"`
-	Metadata   Metadata `yaml:"metadata"`
-	Spec       PodSpec  `yaml:"spec"`
-}
-
-type Metadata struct {
-	Name      string            `yaml:"name"`
-	Namespace string            `yaml:"namespace,omitempty"`
-	Labels    map[string]string `yaml:"labels,omitempty"`
-}
-
-type PodSpec struct {
-	OS        string      `yaml:"os,omitempty"`
-	Containers []Container `yaml:"containers"`
-}
-
-type Container struct {
-	Name           string               `yaml:"name"`
-	Image          string               `yaml:"image"`
-	Ports          []ContainerPort      `yaml:"ports,omitempty"`
-	ReadinessProbe *Probe               `yaml:"readinessProbe,omitempty"`
-	LivenessProbe  *Probe               `yaml:"livenessProbe,omitempty"`
-	Resources      ResourceRequirements `yaml:"resources"`
-}
-
-type ContainerPort struct {
-	ContainerPort int    `yaml:"containerPort"`
-	Protocol      string `yaml:"protocol,omitempty"`
-}
-
-type Probe struct {
-	HTTPGet HTTPGetAction `yaml:"httpGet"`
-}
-
-type HTTPGetAction struct {
-	Path string `yaml:"path"`
-	Port int    `yaml:"port"`
-}
-
-type ResourceRequirements struct {
-	Requests map[string]interface{} `yaml:"requests,omitempty"`
-	Limits   map[string]interface{} `yaml:"limits,omitempty"`
+type ValidationError struct {
+	Line    int
+	Message string
 }
 
 var (
@@ -81,180 +40,375 @@ func validateFile(filename string) error {
 		return err
 	}
 
-	var pod Pod
-	if err := yaml.Unmarshal(content, &pod); err != nil {
+	var root yaml.Node
+	if err := yaml.Unmarshal(content, &root); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing YAML: %v\n", err)
 		return err
 	}
 
-	return validatePod(pod)
-}
-
-func validatePod(pod Pod) error {
-	// Validate apiVersion
-	if pod.APIVersion == "" {
-		fmt.Fprintf(os.Stderr, "apiVersion is required\n")
+	errors := validateYAML(&root, filename)
+	if len(errors) > 0 {
+		for _, err := range errors {
+			fmt.Fprintf(os.Stderr, "%s:%d %s\n", filename, err.Line, err.Message)
+		}
 		return fmt.Errorf("validation failed")
 	}
-	if pod.APIVersion != "v1" {
-		fmt.Fprintf(os.Stderr, "apiVersion has unsupported value '%s'\n", pod.APIVersion)
-		return fmt.Errorf("validation failed")
+
+	return nil
+}
+
+func validateYAML(root *yaml.Node, filename string) []ValidationError {
+	var errors []ValidationError
+
+	if len(root.Content) == 0 {
+		errors = append(errors, ValidationError{Line: 1, Message: "Empty YAML document"})
+		return errors
+	}
+
+	doc := root.Content[0]
+
+	// Validate top-level structure
+	apiVersionNode := findNode(doc, "apiVersion")
+	kindNode := findNode(doc, "kind")
+	metadataNode := findNode(doc, "metadata")
+	specNode := findNode(doc, "spec")
+
+	// Validate apiVersion
+	if apiVersionNode == nil {
+		errors = append(errors, ValidationError{Line: 1, Message: "apiVersion is required"})
+	} else if apiVersionNode.Value != "v1" {
+		errors = append(errors, ValidationError{
+			Line:    apiVersionNode.Line,
+			Message: fmt.Sprintf("apiVersion has unsupported value '%s'", apiVersionNode.Value),
+		})
 	}
 
 	// Validate kind
-	if pod.Kind == "" {
-		fmt.Fprintf(os.Stderr, "kind is required\n")
-		return fmt.Errorf("validation failed")
-	}
-	if pod.Kind != "Pod" {
-		fmt.Fprintf(os.Stderr, "kind has unsupported value '%s'\n", pod.Kind)
-		return fmt.Errorf("validation failed")
+	if kindNode == nil {
+		errors = append(errors, ValidationError{Line: 1, Message: "kind is required"})
+	} else if kindNode.Value != "Pod" {
+		errors = append(errors, ValidationError{
+			Line:    kindNode.Line,
+			Message: fmt.Sprintf("kind has unsupported value '%s'", kindNode.Value),
+		})
 	}
 
 	// Validate metadata
-	if pod.Metadata.Name == "" {
-		fmt.Fprintf(os.Stderr, "metadata.name is required\n")
-		return fmt.Errorf("validation failed")
+	if metadataNode == nil {
+		errors = append(errors, ValidationError{Line: 1, Message: "metadata is required"})
+	} else {
+		nameNode := findNode(metadataNode, "name")
+		if nameNode == nil {
+			errors = append(errors, ValidationError{Line: metadataNode.Line, Message: "metadata.name is required"})
+		} else if nameNode.Value == "" {
+			errors = append(errors, ValidationError{
+				Line:    nameNode.Line,
+				Message: "metadata.name is required",
+			})
+		}
+
+		// Validate namespace if present
+		namespaceNode := findNode(metadataNode, "namespace")
+		if namespaceNode != nil && namespaceNode.Value == "" {
+			errors = append(errors, ValidationError{
+				Line:    namespaceNode.Line,
+				Message: "namespace must be string",
+			})
+		}
+
+		// Validate labels if present
+		labelsNode := findNode(metadataNode, "labels")
+		if labelsNode != nil {
+			for i := 0; i < len(labelsNode.Content); i += 2 {
+				if i+1 < len(labelsNode.Content) {
+					key := labelsNode.Content[i]
+					value := labelsNode.Content[i+1]
+					if key.Value == "" {
+						errors = append(errors, ValidationError{
+							Line:    key.Line,
+							Message: "label key must be string",
+						})
+					}
+					if value.Value == "" {
+						errors = append(errors, ValidationError{
+							Line:    value.Line,
+							Message: "label value must be string",
+						})
+					}
+				}
+			}
+		}
 	}
 
 	// Validate spec
-	if len(pod.Spec.Containers) == 0 {
-		fmt.Fprintf(os.Stderr, "spec.containers is required\n")
-		return fmt.Errorf("validation failed")
-	}
+	if specNode == nil {
+		errors = append(errors, ValidationError{Line: 1, Message: "spec is required"})
+	} else {
+		// Validate OS
+		osNode := findNode(specNode, "os")
+		if osNode != nil && osNode.Value != "" {
+			if osNode.Value != "linux" && osNode.Value != "windows" {
+				errors = append(errors, ValidationError{
+					Line:    osNode.Line,
+					Message: fmt.Sprintf("os has unsupported value '%s'", osNode.Value),
+				})
+			}
+		}
 
-	// Validate OS
-	if pod.Spec.OS != "" && pod.Spec.OS != "linux" && pod.Spec.OS != "windows" {
-		fmt.Fprintf(os.Stderr, "spec.os has unsupported value '%s'\n", pod.Spec.OS)
-		return fmt.Errorf("validation failed")
-	}
-
-	// Validate containers
-	for i, container := range pod.Spec.Containers {
-		if err := validateContainer(container, i); err != nil {
-			return err
+		// Validate containers
+		containersNode := findNode(specNode, "containers")
+		if containersNode == nil {
+			errors = append(errors, ValidationError{Line: specNode.Line, Message: "containers is required"})
+		} else {
+			for i, containerNode := range containersNode.Content {
+				containerErrors := validateContainer(containerNode, i)
+				errors = append(errors, containerErrors...)
+			}
 		}
 	}
 
-	return nil
+	return errors
 }
 
-func validateContainer(container Container, index int) error {
+func validateContainer(containerNode *yaml.Node, index int) []ValidationError {
+	var errors []ValidationError
+
 	// Validate container name
-	if container.Name == "" {
-		fmt.Fprintf(os.Stderr, "spec.containers[%d].name is required\n", index)
-		return fmt.Errorf("validation failed")
-	}
-	if !snakeCaseRegex.MatchString(container.Name) {
-		fmt.Fprintf(os.Stderr, "spec.containers[%d].name has invalid format '%s'\n", index, container.Name)
-		return fmt.Errorf("validation failed")
+	nameNode := findNode(containerNode, "name")
+	if nameNode == nil {
+		errors = append(errors, ValidationError{Line: containerNode.Line, Message: fmt.Sprintf("containers[%d].name is required", index)})
+	} else if nameNode.Value == "" {
+		errors = append(errors, ValidationError{
+			Line:    nameNode.Line,
+			Message: fmt.Sprintf("containers[%d].name is required", index),
+		})
+	} else if !snakeCaseRegex.MatchString(nameNode.Value) {
+		errors = append(errors, ValidationError{
+			Line:    nameNode.Line,
+			Message: fmt.Sprintf("containers[%d].name has invalid format '%s'", index, nameNode.Value),
+		})
 	}
 
 	// Validate container image
-	if container.Image == "" {
-		fmt.Fprintf(os.Stderr, "spec.containers[%d].image is required\n", index)
-		return fmt.Errorf("validation failed")
-	}
-	if !imageRegex.MatchString(container.Image) {
-		fmt.Fprintf(os.Stderr, "spec.containers[%d].image has invalid format '%s'\n", index, container.Image)
-		return fmt.Errorf("validation failed")
-	}
-
-	// Validate ports
-	for i, port := range container.Ports {
-		if port.ContainerPort <= 0 || port.ContainerPort >= 65536 {
-			fmt.Fprintf(os.Stderr, "spec.containers[%d].ports[%d].containerPort value out of range\n", index, i)
-			return fmt.Errorf("validation failed")
-		}
-		if port.Protocol != "" && port.Protocol != "TCP" && port.Protocol != "UDP" {
-			fmt.Fprintf(os.Stderr, "spec.containers[%d].ports[%d].protocol has unsupported value '%s'\n", index, i, port.Protocol)
-			return fmt.Errorf("validation failed")
-		}
-	}
-
-	// Validate probes
-	if container.ReadinessProbe != nil {
-		if err := validateProbe(container.ReadinessProbe, index, "readinessProbe"); err != nil {
-			return err
-		}
-	}
-	if container.LivenessProbe != nil {
-		if err := validateProbe(container.LivenessProbe, index, "livenessProbe"); err != nil {
-			return err
-		}
+	imageNode := findNode(containerNode, "image")
+	if imageNode == nil {
+		errors = append(errors, ValidationError{Line: containerNode.Line, Message: fmt.Sprintf("containers[%d].image is required", index)})
+	} else if imageNode.Value == "" {
+		errors = append(errors, ValidationError{
+			Line:    imageNode.Line,
+			Message: fmt.Sprintf("containers[%d].image is required", index),
+		})
+	} else if !imageRegex.MatchString(imageNode.Value) {
+		errors = append(errors, ValidationError{
+			Line:    imageNode.Line,
+			Message: fmt.Sprintf("containers[%d].image has invalid format '%s'", index, imageNode.Value),
+		})
 	}
 
 	// Validate resources
-	if err := validateResources(container.Resources, index); err != nil {
-		return err
+	resourcesNode := findNode(containerNode, "resources")
+	if resourcesNode == nil {
+		errors = append(errors, ValidationError{Line: containerNode.Line, Message: fmt.Sprintf("containers[%d].resources is required", index)})
+	} else {
+		resourceErrors := validateResources(resourcesNode, index)
+		errors = append(errors, resourceErrors...)
 	}
 
-	return nil
-}
-
-func validateProbe(probe *Probe, containerIndex int, probeType string) error {
-	if probe.HTTPGet.Path == "" {
-		fmt.Fprintf(os.Stderr, "spec.containers[%d].%s.httpGet.path is required\n", containerIndex, probeType)
-		return fmt.Errorf("validation failed")
-	}
-	if !strings.HasPrefix(probe.HTTPGet.Path, "/") {
-		fmt.Fprintf(os.Stderr, "spec.containers[%d].%s.httpGet.path has invalid format '%s'\n", containerIndex, probeType, probe.HTTPGet.Path)
-		return fmt.Errorf("validation failed")
-	}
-	if probe.HTTPGet.Port <= 0 || probe.HTTPGet.Port >= 65536 {
-		fmt.Fprintf(os.Stderr, "spec.containers[%d].%s.httpGet.port value out of range\n", containerIndex, probeType)
-		return fmt.Errorf("validation failed")
-	}
-	return nil
-}
-
-func validateResources(resources ResourceRequirements, containerIndex int) error {
-	// Validate requests
-	if resources.Requests != nil {
-		if err := validateResourceMap(resources.Requests, containerIndex, "requests"); err != nil {
-			return err
+	// Validate ports if present
+	portsNode := findNode(containerNode, "ports")
+	if portsNode != nil {
+		for i, portNode := range portsNode.Content {
+			portErrors := validatePort(portNode, index, i)
+			errors = append(errors, portErrors...)
 		}
 	}
 
-	// Validate limits
-	if resources.Limits != nil {
-		if err := validateResourceMap(resources.Limits, containerIndex, "limits"); err != nil {
-			return err
+	// Validate probes if present
+	readinessProbeNode := findNode(containerNode, "readinessProbe")
+	if readinessProbeNode != nil {
+		probeErrors := validateProbe(readinessProbeNode, index, "readinessProbe")
+		errors = append(errors, probeErrors...)
+	}
+
+	livenessProbeNode := findNode(containerNode, "livenessProbe")
+	if livenessProbeNode != nil {
+		probeErrors := validateProbe(livenessProbeNode, index, "livenessProbe")
+		errors = append(errors, probeErrors...)
+	}
+
+	return errors
+}
+
+func validatePort(portNode *yaml.Node, containerIndex, portIndex int) []ValidationError {
+	var errors []ValidationError
+
+	containerPortNode := findNode(portNode, "containerPort")
+	if containerPortNode == nil {
+		errors = append(errors, ValidationError{Line: portNode.Line, Message: fmt.Sprintf("containers[%d].ports[%d].containerPort is required", containerIndex, portIndex)})
+	} else {
+		port, err := strconv.Atoi(containerPortNode.Value)
+		if err != nil {
+			errors = append(errors, ValidationError{
+				Line:    containerPortNode.Line,
+				Message: fmt.Sprintf("containers[%d].ports[%d].containerPort must be int", containerIndex, portIndex),
+			})
+		} else if port <= 0 || port >= 65536 {
+			errors = append(errors, ValidationError{
+				Line:    containerPortNode.Line,
+				Message: fmt.Sprintf("containers[%d].ports[%d].containerPort value out of range", containerIndex, portIndex),
+			})
 		}
 	}
 
-	return nil
+	protocolNode := findNode(portNode, "protocol")
+	if protocolNode != nil && protocolNode.Value != "" {
+		if protocolNode.Value != "TCP" && protocolNode.Value != "UDP" {
+			errors = append(errors, ValidationError{
+				Line:    protocolNode.Line,
+				Message: fmt.Sprintf("containers[%d].ports[%d].protocol has unsupported value '%s'", containerIndex, portIndex, protocolNode.Value),
+			})
+		}
+	}
+
+	return errors
 }
 
-func validateResourceMap(resourceMap map[string]interface{}, containerIndex int, resourceType string) error {
-	for key, value := range resourceMap {
-		switch key {
+func validateProbe(probeNode *yaml.Node, containerIndex int, probeType string) []ValidationError {
+	var errors []ValidationError
+
+	httpGetNode := findNode(probeNode, "httpGet")
+	if httpGetNode == nil {
+		errors = append(errors, ValidationError{Line: probeNode.Line, Message: fmt.Sprintf("containers[%d].%s.httpGet is required", containerIndex, probeType)})
+	} else {
+		pathNode := findNode(httpGetNode, "path")
+		if pathNode == nil {
+			errors = append(errors, ValidationError{Line: httpGetNode.Line, Message: fmt.Sprintf("containers[%d].%s.httpGet.path is required", containerIndex, probeType)})
+		} else if pathNode.Value == "" {
+			errors = append(errors, ValidationError{
+				Line:    pathNode.Line,
+				Message: fmt.Sprintf("containers[%d].%s.httpGet.path is required", containerIndex, probeType),
+			})
+		} else if !strings.HasPrefix(pathNode.Value, "/") {
+			errors = append(errors, ValidationError{
+				Line:    pathNode.Line,
+				Message: fmt.Sprintf("containers[%d].%s.httpGet.path has invalid format '%s'", containerIndex, probeType, pathNode.Value),
+			})
+		}
+
+		portNode := findNode(httpGetNode, "port")
+		if portNode == nil {
+			errors = append(errors, ValidationError{Line: httpGetNode.Line, Message: fmt.Sprintf("containers[%d].%s.httpGet.port is required", containerIndex, probeType)})
+		} else {
+			port, err := strconv.Atoi(portNode.Value)
+			if err != nil {
+				errors = append(errors, ValidationError{
+					Line:    portNode.Line,
+					Message: fmt.Sprintf("containers[%d].%s.httpGet.port must be int", containerIndex, probeType),
+				})
+			} else if port <= 0 || port >= 65536 {
+				errors = append(errors, ValidationError{
+					Line:    portNode.Line,
+					Message: fmt.Sprintf("containers[%d].%s.httpGet.port value out of range", containerIndex, probeType),
+				})
+			}
+		}
+	}
+
+	return errors
+}
+
+func validateResources(resourcesNode *yaml.Node, containerIndex int) []ValidationError {
+	var errors []ValidationError
+
+	requestsNode := findNode(resourcesNode, "requests")
+	if requestsNode != nil {
+		requestErrors := validateResourceMap(requestsNode, containerIndex, "requests")
+		errors = append(errors, requestErrors...)
+	}
+
+	limitsNode := findNode(resourcesNode, "limits")
+	if limitsNode != nil {
+		limitErrors := validateResourceMap(limitsNode, containerIndex, "limits")
+		errors = append(errors, limitErrors...)
+	}
+
+	return errors
+}
+
+func validateResourceMap(resourceMapNode *yaml.Node, containerIndex int, resourceType string) []ValidationError {
+	var errors []ValidationError
+
+	for i := 0; i < len(resourceMapNode.Content); i += 2 {
+		if i+1 >= len(resourceMapNode.Content) {
+			break
+		}
+		keyNode := resourceMapNode.Content[i]
+		valueNode := resourceMapNode.Content[i+1]
+
+		switch keyNode.Value {
 		case "cpu":
-			if cpu, ok := value.(int); !ok {
-				fmt.Fprintf(os.Stderr, "spec.containers[%d].resources.%s.cpu must be int\n", containerIndex, resourceType)
-				return fmt.Errorf("validation failed")
-			} else if cpu < 0 {
-				fmt.Fprintf(os.Stderr, "spec.containers[%d].resources.%s.cpu value out of range\n", containerIndex, resourceType)
-				return fmt.Errorf("validation failed")
+			if valueNode.Kind != yaml.ScalarNode {
+				errors = append(errors, ValidationError{
+					Line:    valueNode.Line,
+					Message: fmt.Sprintf("containers[%d].resources.%s.cpu must be int", containerIndex, resourceType),
+				})
+			} else {
+				cpu, err := strconv.Atoi(valueNode.Value)
+				if err != nil {
+					errors = append(errors, ValidationError{
+						Line:    valueNode.Line,
+						Message: fmt.Sprintf("containers[%d].resources.%s.cpu must be int", containerIndex, resourceType),
+					})
+				} else if cpu < 0 {
+					errors = append(errors, ValidationError{
+						Line:    valueNode.Line,
+						Message: fmt.Sprintf("containers[%d].resources.%s.cpu value out of range", containerIndex, resourceType),
+					})
+				}
 			}
 		case "memory":
-			if memory, ok := value.(string); !ok {
-				fmt.Fprintf(os.Stderr, "spec.containers[%d].resources.%s.memory must be string\n", containerIndex, resourceType)
-				return fmt.Errorf("validation failed")
-			} else if !memoryRegex.MatchString(memory) {
-				fmt.Fprintf(os.Stderr, "spec.containers[%d].resources.%s.memory has invalid format '%s'\n", containerIndex, resourceType, memory)
-				return fmt.Errorf("validation failed")
+			if valueNode.Kind != yaml.ScalarNode {
+				errors = append(errors, ValidationError{
+					Line:    valueNode.Line,
+					Message: fmt.Sprintf("containers[%d].resources.%s.memory must be string", containerIndex, resourceType),
+				})
+			} else if !memoryRegex.MatchString(valueNode.Value) {
+				errors = append(errors, ValidationError{
+					Line:    valueNode.Line,
+					Message: fmt.Sprintf("containers[%d].resources.%s.memory has invalid format '%s'", containerIndex, resourceType, valueNode.Value),
+				})
 			} else {
-				// Validate numeric part
-				numStr := memory[:len(memory)-2]
+				numStr := valueNode.Value[:len(valueNode.Value)-2]
 				if num, err := strconv.Atoi(numStr); err != nil || num < 0 {
-					fmt.Fprintf(os.Stderr, "spec.containers[%d].resources.%s.memory value out of range\n", containerIndex, resourceType)
-					return fmt.Errorf("validation failed")
+					errors = append(errors, ValidationError{
+						Line:    valueNode.Line,
+						Message: fmt.Sprintf("containers[%d].resources.%s.memory value out of range", containerIndex, resourceType),
+					})
 				}
 			}
 		default:
-			fmt.Fprintf(os.Stderr, "spec.containers[%d].resources.%s.%s has unsupported value\n", containerIndex, resourceType, key)
-			return fmt.Errorf("validation failed")
+			errors = append(errors, ValidationError{
+				Line:    keyNode.Line,
+				Message: fmt.Sprintf("containers[%d].resources.%s.%s has unsupported value", containerIndex, resourceType, keyNode.Value),
+			})
+		}
+	}
+
+	return errors
+}
+
+func findNode(parent *yaml.Node, key string) *yaml.Node {
+	if parent == nil || parent.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	for i := 0; i < len(parent.Content); i += 2 {
+		if i+1 < len(parent.Content) {
+			keyNode := parent.Content[i]
+			valueNode := parent.Content[i+1]
+			if keyNode.Value == key {
+				return valueNode
+			}
 		}
 	}
 	return nil
