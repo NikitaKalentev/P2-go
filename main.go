@@ -37,7 +37,7 @@ func main() {
 
 	errors := validateYAML(&root)
 	if len(errors) > 0 {
-		// DEBUG: Печатаем в stderr для отладки
+		// ВАЖНО: Выводим ошибки в stderr
 		for _, err := range errors {
 			fmt.Fprintf(os.Stderr, "%s:%d %s\n", filename, err.Line, err.Message)
 		}
@@ -66,7 +66,7 @@ func validateYAML(root *yaml.Node) []ValidationError {
 func validateTopLevel(doc *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
-	fields := make(map[string]*yaml.Node)
+	fields := map[string]*yaml.Node{}
 	for i := 0; i < len(doc.Content); i += 2 {
 		if i+1 < len(doc.Content) {
 			key := doc.Content[i]
@@ -109,7 +109,7 @@ func validateTopLevel(doc *yaml.Node) []ValidationError {
 func validateMetadata(metadata *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
-	fields := make(map[string]*yaml.Node)
+	fields := map[string]*yaml.Node{}
 	for i := 0; i < len(metadata.Content); i += 2 {
 		if i+1 < len(metadata.Content) {
 			key := metadata.Content[i]
@@ -120,7 +120,7 @@ func validateMetadata(metadata *yaml.Node) []ValidationError {
 
 	if name, exists := fields["name"]; !exists {
 		errors = append(errors, ValidationError{Line: metadata.Line, Message: "name is required"})
-	} else if strings.TrimSpace(name.Value) == "" {
+	} else if name.Value == "" {
 		errors = append(errors, ValidationError{Line: name.Line, Message: "name is required"})
 	}
 
@@ -130,7 +130,7 @@ func validateMetadata(metadata *yaml.Node) []ValidationError {
 func validateSpec(spec *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
-	fields := make(map[string]*yaml.Node)
+	fields := map[string]*yaml.Node{}
 	for i := 0; i < len(spec.Content); i += 2 {
 		if i+1 < len(spec.Content) {
 			key := spec.Content[i]
@@ -163,7 +163,7 @@ func validateSpec(spec *yaml.Node) []ValidationError {
 func validateContainer(container *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
-	fields := make(map[string]*yaml.Node)
+	fields := map[string]*yaml.Node{}
 	for i := 0; i < len(container.Content); i += 2 {
 		if i+1 < len(container.Content) {
 			key := container.Content[i]
@@ -175,7 +175,7 @@ func validateContainer(container *yaml.Node) []ValidationError {
 	// name
 	if name, exists := fields["name"]; !exists {
 		errors = append(errors, ValidationError{Line: container.Line, Message: "name is required"})
-	} else if strings.TrimSpace(name.Value) == "" {
+	} else if name.Value == "" {
 		errors = append(errors, ValidationError{Line: name.Line, Message: "name is required"})
 	} else if !snakeCaseRegex.MatchString(name.Value) {
 		errors = append(errors, ValidationError{Line: name.Line, Message: fmt.Sprintf("name has invalid format '%s'", name.Value)})
@@ -184,7 +184,7 @@ func validateContainer(container *yaml.Node) []ValidationError {
 	// image
 	if image, exists := fields["image"]; !exists {
 		errors = append(errors, ValidationError{Line: container.Line, Message: "image is required"})
-	} else if strings.TrimSpace(image.Value) == "" {
+	} else if image.Value == "" {
 		errors = append(errors, ValidationError{Line: image.Line, Message: "image is required"})
 	} else if !imageRegex.MatchString(image.Value) {
 		errors = append(errors, ValidationError{Line: image.Line, Message: fmt.Sprintf("image has invalid format '%s'", image.Value)})
@@ -220,7 +220,7 @@ func validateContainer(container *yaml.Node) []ValidationError {
 func validateResources(resources *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
-	fields := make(map[string]*yaml.Node)
+	fields := map[string]*yaml.Node{}
 	for i := 0; i < len(resources.Content); i += 2 {
 		if i+1 < len(resources.Content) {
 			key := resources.Content[i]
@@ -274,7 +274,7 @@ func validateResourceMap(resourceMap *yaml.Node) []ValidationError {
 func validatePort(port *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
-	fields := make(map[string]*yaml.Node)
+	fields := map[string]*yaml.Node{}
 	for i := 0; i < len(port.Content); i += 2 {
 		if i+1 < len(port.Content) {
 			key := port.Content[i]
@@ -306,7 +306,7 @@ func validatePort(port *yaml.Node) []ValidationError {
 func validateProbe(probe *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
-	fields := make(map[string]*yaml.Node)
+	fields := map[string]*yaml.Node{}
 	for i := 0; i < len(probe.Content); i += 2 {
 		if i+1 < len(probe.Content) {
 			key := probe.Content[i]
@@ -327,7 +327,7 @@ func validateProbe(probe *yaml.Node) []ValidationError {
 func validateHTTPGet(httpGet *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
-	fields := make(map[string]*yaml.Node)
+	fields := map[string]*yaml.Node{}
 	for i := 0; i < len(httpGet.Content); i += 2 {
 		if i+1 < len(httpGet.Content) {
 			key := httpGet.Content[i]
@@ -338,7 +338,7 @@ func validateHTTPGet(httpGet *yaml.Node) []ValidationError {
 
 	if path, exists := fields["path"]; !exists {
 		errors = append(errors, ValidationError{Line: httpGet.Line, Message: "path is required"})
-	} else if strings.TrimSpace(path.Value) == "" {
+	} else if path.Value == "" {
 		errors = append(errors, ValidationError{Line: path.Line, Message: "path is required"})
 	} else if !strings.HasPrefix(path.Value, "/") {
 		errors = append(errors, ValidationError{Line: path.Line, Message: fmt.Sprintf("path has invalid format '%s'", path.Value)})
