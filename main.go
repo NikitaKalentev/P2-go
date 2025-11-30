@@ -54,12 +54,16 @@ func (v *Validator) validateTopLevel(node *yaml.Node) {
 	// Проверяем обязательные поля
 	if apiVersion, exists := fields["apiVersion"]; !exists {
 		v.addError(node.Line, "apiVersion", "is required")
+	} else if apiVersion.Kind != yaml.ScalarNode || apiVersion.Value == "" {
+		v.addError(apiVersion.Line, "apiVersion", "is required")
 	} else if apiVersion.Value != "v1" {
 		v.addError(apiVersion.Line, "apiVersion", "must be 'v1'")
 	}
 
 	if kind, exists := fields["kind"]; !exists {
 		v.addError(node.Line, "kind", "is required")
+	} else if kind.Kind != yaml.ScalarNode || kind.Value == "" {
+		v.addError(kind.Line, "kind", "is required")
 	} else if kind.Value != "Pod" {
 		v.addError(kind.Line, "kind", "must be 'Pod'")
 	}
@@ -88,10 +92,16 @@ func (v *Validator) validateObjectMeta(node *yaml.Node) {
 		fields[key.Value] = value
 	}
 
-	if name, exists := fields["name"]; !exists {
+	if name, exists := fields["name"]; !exists || name.Kind != yaml.ScalarNode || name.Value == "" {
 		v.addError(node.Line, "metadata.name", "is required")
-	} else if name.Kind != yaml.ScalarNode || name.Value == "" {
-		v.addError(name.Line, "metadata.name", "is required")
+	}
+
+	if namespace, exists := fields["namespace"]; exists && namespace.Kind != yaml.ScalarNode {
+		v.addError(namespace.Line, "metadata.namespace", "must be string")
+	}
+
+	if labels, exists := fields["labels"]; exists && labels.Kind != yaml.MappingNode {
+		v.addError(labels.Line, "metadata.labels", "must be object")
 	}
 }
 
@@ -142,6 +152,8 @@ func (v *Validator) validatePodOS(node *yaml.Node) {
 
 	if name, exists := fields["name"]; !exists {
 		v.addError(node.Line, "spec.os.name", "is required")
+	} else if name.Kind != yaml.ScalarNode || name.Value == "" {
+		v.addError(name.Line, "spec.os.name", "is required")
 	} else if name.Value != "linux" && name.Value != "windows" {
 		v.addError(name.Line, "os", fmt.Sprintf("has unsupported value '%s'", name.Value))
 	}
@@ -174,10 +186,10 @@ func (v *Validator) validateContainers(node *yaml.Node) {
 		// Проверка имени контейнера
 		if name, exists := fields["name"]; !exists {
 			v.addError(containerNode.Line, "spec.containers[].name", "is required")
+		} else if name.Kind != yaml.ScalarNode || name.Value == "" {
+			v.addError(name.Line, "spec.containers[].name", "is required")
 		} else {
-			if name.Kind != yaml.ScalarNode || name.Value == "" {
-				v.addError(name.Line, "spec.containers[].name", "is required")
-			} else if containerNames[name.Value] {
+			if containerNames[name.Value] {
 				v.addError(name.Line, "spec.containers[].name", "must be unique within pod")
 			} else {
 				containerNames[name.Value] = true
@@ -187,14 +199,12 @@ func (v *Validator) validateContainers(node *yaml.Node) {
 		// Проверка image
 		if image, exists := fields["image"]; !exists {
 			v.addError(containerNode.Line, "spec.containers[].image", "is required")
-		} else {
-			if image.Kind != yaml.ScalarNode || image.Value == "" {
-				v.addError(image.Line, "spec.containers[].image", "is required")
-			} else if !strings.HasPrefix(image.Value, "registry.bigbrother.io/") {
-				v.addError(image.Line, "spec.containers[].image", fmt.Sprintf("has invalid format '%s'", image.Value))
-			} else if !strings.Contains(image.Value, ":") {
-				v.addError(image.Line, "spec.containers[].image", fmt.Sprintf("has invalid format '%s'", image.Value))
-			}
+		} else if image.Kind != yaml.ScalarNode || image.Value == "" {
+			v.addError(image.Line, "spec.containers[].image", "is required")
+		} else if !strings.HasPrefix(image.Value, "registry.bigbrother.io/") {
+			v.addError(image.Line, "spec.containers[].image", fmt.Sprintf("has invalid format '%s'", image.Value))
+		} else if !strings.Contains(image.Value, ":") {
+			v.addError(image.Line, "spec.containers[].image", fmt.Sprintf("has invalid format '%s'", image.Value))
 		}
 
 		// Проверка ports
@@ -240,21 +250,23 @@ func (v *Validator) validateContainerPorts(node *yaml.Node) {
 
 		if containerPort, exists := fields["containerPort"]; !exists {
 			v.addError(portNode.Line, "spec.containers[].ports[].containerPort", "is required")
+		} else if containerPort.Kind != yaml.ScalarNode {
+			v.addError(containerPort.Line, "spec.containers[].ports[].containerPort", "must be integer")
+		} else if containerPort.Value == "" {
+			v.addError(containerPort.Line, "spec.containers[].ports[].containerPort", "is required")
 		} else {
-			if containerPort.Kind != yaml.ScalarNode {
+			port, err := strconv.Atoi(containerPort.Value)
+			if err != nil {
 				v.addError(containerPort.Line, "spec.containers[].ports[].containerPort", "must be integer")
-			} else {
-				port, err := strconv.Atoi(containerPort.Value)
-				if err != nil {
-					v.addError(containerPort.Line, "spec.containers[].ports[].containerPort", "must be integer")
-				} else if port <= 0 || port >= 65536 {
-					v.addError(containerPort.Line, "spec.containers[].ports[].containerPort", "value out of range")
-				}
+			} else if port <= 0 || port >= 65536 {
+				v.addError(containerPort.Line, "spec.containers[].ports[].containerPort", "value out of range")
 			}
 		}
 
 		if protocol, exists := fields["protocol"]; exists {
-			if protocol.Value != "TCP" && protocol.Value != "UDP" {
+			if protocol.Kind != yaml.ScalarNode {
+				v.addError(protocol.Line, "spec.containers[].ports[].protocol", "must be string")
+			} else if protocol.Value != "TCP" && protocol.Value != "UDP" {
 				v.addError(protocol.Line, "spec.containers[].ports[].protocol", fmt.Sprintf("has unsupported value '%s'", protocol.Value))
 			}
 		}
@@ -302,22 +314,24 @@ func (v *Validator) validateHTTPGetAction(node *yaml.Node, probeType string) {
 
 	if path, exists := fields["path"]; !exists {
 		v.addError(node.Line, fmt.Sprintf("spec.containers[].%s.httpGet.path", probeType), "is required")
-	} else if path.Kind != yaml.ScalarNode || path.Value == "" || !strings.HasPrefix(path.Value, "/") {
+	} else if path.Kind != yaml.ScalarNode || path.Value == "" {
+		v.addError(path.Line, fmt.Sprintf("spec.containers[].%s.httpGet.path", probeType), "is required")
+	} else if !strings.HasPrefix(path.Value, "/") {
 		v.addError(path.Line, fmt.Sprintf("spec.containers[].%s.httpGet.path", probeType), "must be absolute path")
 	}
 
 	if port, exists := fields["port"]; !exists {
 		v.addError(node.Line, fmt.Sprintf("spec.containers[].%s.httpGet.port", probeType), "is required")
+	} else if port.Kind != yaml.ScalarNode {
+		v.addError(port.Line, fmt.Sprintf("spec.containers[].%s.httpGet.port", probeType), "must be integer")
+	} else if port.Value == "" {
+		v.addError(port.Line, fmt.Sprintf("spec.containers[].%s.httpGet.port", probeType), "is required")
 	} else {
-		if port.Kind != yaml.ScalarNode {
+		portNum, err := strconv.Atoi(port.Value)
+		if err != nil {
 			v.addError(port.Line, fmt.Sprintf("spec.containers[].%s.httpGet.port", probeType), "must be integer")
-		} else {
-			portNum, err := strconv.Atoi(port.Value)
-			if err != nil {
-				v.addError(port.Line, fmt.Sprintf("spec.containers[].%s.httpGet.port", probeType), "must be integer")
-			} else if portNum <= 0 || portNum >= 65536 {
-				v.addError(port.Line, fmt.Sprintf("spec.containers[].%s.httpGet.port", probeType), "value out of range")
-			}
+		} else if portNum <= 0 || portNum >= 65536 {
+			v.addError(port.Line, fmt.Sprintf("spec.containers[].%s.httpGet.port", probeType), "value out of range")
 		}
 	}
 }
@@ -368,9 +382,14 @@ func (v *Validator) validateResourceObject(node *yaml.Node, resourceType string)
 	if cpu, exists := fields["cpu"]; exists {
 		if cpu.Kind != yaml.ScalarNode {
 			v.addError(cpu.Line, fmt.Sprintf("spec.containers[].resources.%s.cpu", resourceType), "must be integer")
+		} else if cpu.Value == "" {
+			v.addError(cpu.Line, fmt.Sprintf("spec.containers[].resources.%s.cpu", resourceType), "is required")
 		} else {
-			if _, err := strconv.Atoi(cpu.Value); err != nil {
-				v.addError(cpu.Line, fmt.Sprintf("spec.containers[].resources.%s.cpu", resourceType), "must be integer")
+			cpuValue, err := strconv.Atoi(cpu.Value)
+			if err != nil {
+				v.addError(cpu.Line, fmt.Sprintf("spec.containers[].resources.%s.cpu", resourceType), "must be positive integer")
+			} else if cpuValue <= 0 {
+				v.addError(cpu.Line, fmt.Sprintf("spec.containers[].resources.%s.cpu", resourceType), "must be greater than zero")
 			}
 		}
 	}
@@ -378,6 +397,8 @@ func (v *Validator) validateResourceObject(node *yaml.Node, resourceType string)
 	if memory, exists := fields["memory"]; exists {
 		if memory.Kind != yaml.ScalarNode {
 			v.addError(memory.Line, fmt.Sprintf("spec.containers[].resources.%s.memory", resourceType), "must be string")
+		} else if memory.Value == "" {
+			v.addError(memory.Line, fmt.Sprintf("spec.containers[].resources.%s.memory", resourceType), "is required")
 		} else if !memoryRegex.MatchString(memory.Value) {
 			v.addError(memory.Line, fmt.Sprintf("spec.containers[].resources.%s.memory", resourceType), fmt.Sprintf("has invalid format '%s'", memory.Value))
 		}
@@ -426,6 +447,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// При успешной валидации НЕ выводим сообщение, просто выходим с кодом 0
+	// При успешной валидации просто выходим с кодом 0
 	os.Exit(0)
 }
