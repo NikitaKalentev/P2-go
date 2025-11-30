@@ -41,6 +41,7 @@ const (
 	ErrEmptyDocument           = "Empty YAML document"
 	ErrMustBeMapping           = "must be a mapping"
 	ErrMustBeList              = "must be a list"
+	ErrResourceMapEmpty        = "resource map is empty"
 )
 
 // Регулярные выражения
@@ -86,6 +87,16 @@ type ValidationError struct {
 	Message string
 }
 
+// Вспомогательная функция для создания ошибок с корректным номером строки
+func newValidationError(node *yaml.Node, message string) ValidationError {
+	line := node.Line
+	if line == 0 && node.Content != nil && len(node.Content) > 0 {
+		// Берём строку первого дочернего узла, если текущая строка равна 0
+		line = node.Content[0].Line
+	}
+	return ValidationError{Line: line, Message: message}
+}
+
 func validateYAML(root *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
@@ -103,7 +114,7 @@ func validateTopLevel(doc *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	if doc.Kind != yaml.MappingNode {
-		return []ValidationError{{Line: doc.Line, Message: ErrInvalidStructure}}
+		return []ValidationError{newValidationError(doc, ErrInvalidStructure)}
 	}
 
 	fields := make(map[string]*yaml.Node)
@@ -120,13 +131,13 @@ func validateTopLevel(doc *yaml.Node) []ValidationError {
 	if apiVersion, exists := fields["apiVersion"]; !exists || apiVersion == nil {
 		errors = append(errors, ValidationError{Line: 1, Message: ErrAPIVersionRequired})
 	} else if apiVersion.Value != "v1" {
-		errors = append(errors, ValidationError{Line: apiVersion.Line, Message: fmt.Sprintf(ErrAPIVersionUnsupported, apiVersion.Value)})
+		errors = append(errors, newValidationError(apiVersion, fmt.Sprintf(ErrAPIVersionUnsupported, apiVersion.Value)))
 	}
 
 	if kind, exists := fields["kind"]; !exists || kind == nil {
 		errors = append(errors, ValidationError{Line: 1, Message: ErrKindRequired})
 	} else if kind.Value != "Pod" {
-		errors = append(errors, ValidationError{Line: kind.Line, Message: fmt.Sprintf(ErrKindUnsupported, kind.Value)})
+		errors = append(errors, newValidationError(kind, fmt.Sprintf(ErrKindUnsupported, kind.Value)))
 	}
 
 	if metadata, exists := fields["metadata"]; !exists || metadata == nil {
@@ -148,7 +159,7 @@ func validateMetadata(metadata *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	if metadata.Kind != yaml.MappingNode {
-		return []ValidationError{{Line: metadata.Line, Message: fmt.Sprintf("metadata %s", ErrMustBeMapping)}}
+		return []ValidationError{newValidationError(metadata, fmt.Sprintf("metadata %s", ErrMustBeMapping))}
 	}
 
 	fields := make(map[string]*yaml.Node)
@@ -163,9 +174,9 @@ func validateMetadata(metadata *yaml.Node) []ValidationError {
 	}
 
 	if name, exists := fields["name"]; !exists || name == nil {
-		errors = append(errors, ValidationError{Line: metadata.Line, Message: ErrNameRequired})
+		errors = append(errors, newValidationError(metadata, ErrNameRequired))
 	} else if strings.TrimSpace(name.Value) == "" {
-		errors = append(errors, ValidationError{Line: name.Line, Message: ErrNameRequired})
+		errors = append(errors, newValidationError(name, ErrNameRequired))
 	}
 
 	return errors
@@ -175,7 +186,7 @@ func validateSpec(spec *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	if spec.Kind != yaml.MappingNode {
-		return []ValidationError{{Line: spec.Line, Message: fmt.Sprintf("spec %s", ErrMustBeMapping)}}
+		return []ValidationError{newValidationError(spec, fmt.Sprintf("spec %s", ErrMustBeMapping))}
 	}
 
 	fields := make(map[string]*yaml.Node)
@@ -192,17 +203,17 @@ func validateSpec(spec *yaml.Node) []ValidationError {
 	// os - упрощенная проверка согласно тестам
 	if os, exists := fields["os"]; exists && os != nil {
 		if os.Value != "linux" && os.Value != "windows" {
-			errors = append(errors, ValidationError{Line: os.Line, Message: fmt.Sprintf(ErrOSUnsupported, os.Value)})
+			errors = append(errors, newValidationError(os, fmt.Sprintf(ErrOSUnsupported, os.Value)))
 		}
 	}
 
 	// containers
 	if containers, exists := fields["containers"]; !exists || containers == nil {
-		errors = append(errors, ValidationError{Line: spec.Line, Message: ErrContainersRequired})
+		errors = append(errors, newValidationError(spec, ErrContainersRequired))
 	} else if containers.Kind != yaml.SequenceNode {
-		errors = append(errors, ValidationError{Line: containers.Line, Message: fmt.Sprintf("containers %s", ErrMustBeList)})
+		errors = append(errors, newValidationError(containers, fmt.Sprintf("containers %s", ErrMustBeList)))
 	} else if len(containers.Content) == 0 {
-		errors = append(errors, ValidationError{Line: containers.Line, Message: ErrContainersRequired})
+		errors = append(errors, newValidationError(containers, ErrContainersRequired))
 	} else {
 		for _, container := range containers.Content {
 			if container != nil {
@@ -218,7 +229,7 @@ func validateContainer(container *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	if container.Kind != yaml.MappingNode {
-		return []ValidationError{{Line: container.Line, Message: fmt.Sprintf("container %s", ErrMustBeMapping)}}
+		return []ValidationError{newValidationError(container, fmt.Sprintf("container %s", ErrMustBeMapping))}
 	}
 
 	fields := make(map[string]*yaml.Node)
@@ -234,25 +245,25 @@ func validateContainer(container *yaml.Node) []ValidationError {
 
 	// name
 	if name, exists := fields["name"]; !exists || name == nil {
-		errors = append(errors, ValidationError{Line: container.Line, Message: ErrNameRequired})
+		errors = append(errors, newValidationError(container, ErrNameRequired))
 	} else if strings.TrimSpace(name.Value) == "" {
-		errors = append(errors, ValidationError{Line: name.Line, Message: ErrNameRequired})
+		errors = append(errors, newValidationError(name, ErrNameRequired))
 	} else if !snakeCaseRegex.MatchString(name.Value) {
-		errors = append(errors, ValidationError{Line: name.Line, Message: fmt.Sprintf(ErrNameInvalidFormat, name.Value)})
+		errors = append(errors, newValidationError(name, fmt.Sprintf(ErrNameInvalidFormat, name.Value)))
 	}
 
 	// image
 	if image, exists := fields["image"]; !exists || image == nil {
-		errors = append(errors, ValidationError{Line: container.Line, Message: ErrImageRequired})
+		errors = append(errors, newValidationError(container, ErrImageRequired))
 	} else if image.Value == "" {
-		errors = append(errors, ValidationError{Line: image.Line, Message: ErrImageRequired})
+		errors = append(errors, newValidationError(image, ErrImageRequired))
 	} else if !imageRegex.MatchString(image.Value) {
-		errors = append(errors, ValidationError{Line: image.Line, Message: fmt.Sprintf(ErrImageInvalidFormat, image.Value)})
+		errors = append(errors, newValidationError(image, fmt.Sprintf(ErrImageInvalidFormat, image.Value)))
 	}
 
 	// resources
 	if resources, exists := fields["resources"]; !exists || resources == nil {
-		errors = append(errors, ValidationError{Line: container.Line, Message: ErrResourcesRequired})
+		errors = append(errors, newValidationError(container, ErrResourcesRequired))
 	} else {
 		errors = append(errors, validateResources(resources)...)
 	}
@@ -285,7 +296,7 @@ func validateResources(resources *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	if resources.Kind != yaml.MappingNode {
-		return []ValidationError{{Line: resources.Line, Message: fmt.Sprintf("resources %s", ErrMustBeMapping)}}
+		return []ValidationError{newValidationError(resources, fmt.Sprintf("resources %s", ErrMustBeMapping))}
 	}
 
 	fields := make(map[string]*yaml.Node)
@@ -314,49 +325,61 @@ func validateResourceMap(resourceMap *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	if resourceMap.Kind != yaml.MappingNode {
-		return []ValidationError{{Line: resourceMap.Line, Message: fmt.Sprintf("resource map %s", ErrMustBeMapping)}}
+		return []ValidationError{newValidationError(resourceMap, fmt.Sprintf("resource map %s", ErrMustBeMapping))}
 	}
 
 	// Проверка на пустой Content
 	if len(resourceMap.Content) == 0 {
-		return []ValidationError{{Line: resourceMap.Line, Message: "resource map is empty"}}
+		return []ValidationError{newValidationError(resourceMap, ErrResourceMapEmpty)}
 	}
 
 	for i := 0; i < len(resourceMap.Content); i += 2 {
-		if i+1 < len(resourceMap.Content) {
-			key := resourceMap.Content[i]
-			value := resourceMap.Content[i+1]
+		if i+1 >= len(resourceMap.Content) {
+			continue // защита от выхода за границы
+		}
+		
+		key := resourceMap.Content[i]
+		value := resourceMap.Content[i+1]
 
-			if key == nil || value == nil {
+		if key == nil || value == nil {
+			continue
+		}
+
+		switch key.Value {
+		case "cpu":
+			// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Проверяем, что CPU - это число без кавычек
+			// В YAML числа без кавычек имеют тег "!!int", строки в кавычках - "!!str"
+			
+			// Отладочный вывод для CPU
+			// fmt.Printf("DEBUG: CPU field line=%d, tag=%s, value=%s\n", value.Line, value.Tag, value.Value)
+			
+			// Проверка на пустые значения
+			if value.Value == "" {
+				errors = append(errors, newValidationError(value, ErrCPUMustBeInt))
 				continue
 			}
-
-			switch key.Value {
-			case "cpu":
-				// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Проверяем, что CPU - это число без кавычек
-				// В YAML числа без кавычек имеют тег "!!int", строки в кавычках - "!!str"
-				if value.Tag != "!!int" {
-					errors = append(errors, ValidationError{Line: value.Line, Message: ErrCPUMustBeInt})
-				} else {
-					// Дополнительная проверка, что значение не пустое и является числом
-					if value.Value == "" {
-						errors = append(errors, ValidationError{Line: value.Line, Message: ErrCPUMustBeInt})
-					} else if _, err := strconv.Atoi(value.Value); err != nil {
-						errors = append(errors, ValidationError{Line: value.Line, Message: ErrCPUMustBeInt})
-					}
+			
+			// Проверка тега YAML
+			if value.Tag != "!!int" {
+				errors = append(errors, newValidationError(value, ErrCPUMustBeInt))
+			} else {
+				// Дополнительная проверка, что значение является числом
+				if _, err := strconv.Atoi(value.Value); err != nil {
+					errors = append(errors, newValidationError(value, ErrCPUMustBeInt))
 				}
-			case "memory":
-				if !memoryRegex.MatchString(value.Value) {
-					errors = append(errors, ValidationError{Line: value.Line, Message: fmt.Sprintf(ErrMemoryInvalidFormat, value.Value)})
-				} else {
-					numStr := value.Value[:len(value.Value)-2]
-					if num, err := strconv.Atoi(numStr); err != nil || num <= 0 {
-						errors = append(errors, ValidationError{Line: value.Line, Message: ErrMemoryOutOfRange})
-					}
-				}
-			default:
-				errors = append(errors, ValidationError{Line: key.Line, Message: fmt.Sprintf(ErrUnsupportedValue, key.Value)})
 			}
+			
+		case "memory":
+			if !memoryRegex.MatchString(value.Value) {
+				errors = append(errors, newValidationError(value, fmt.Sprintf(ErrMemoryInvalidFormat, value.Value)))
+			} else {
+				numStr := value.Value[:len(value.Value)-2]
+				if num, err := strconv.Atoi(numStr); err != nil || num <= 0 {
+					errors = append(errors, newValidationError(value, ErrMemoryOutOfRange))
+				}
+			}
+		default:
+			errors = append(errors, newValidationError(key, fmt.Sprintf(ErrUnsupportedValue, key.Value)))
 		}
 	}
 
@@ -367,7 +390,7 @@ func validatePort(port *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	if port.Kind != yaml.MappingNode {
-		return []ValidationError{{Line: port.Line, Message: fmt.Sprintf("port %s", ErrMustBeMapping)}}
+		return []ValidationError{newValidationError(port, fmt.Sprintf("port %s", ErrMustBeMapping))}
 	}
 
 	fields := make(map[string]*yaml.Node)
@@ -382,19 +405,22 @@ func validatePort(port *yaml.Node) []ValidationError {
 	}
 
 	if containerPort, exists := fields["containerPort"]; !exists || containerPort == nil {
-		errors = append(errors, ValidationError{Line: port.Line, Message: ErrContainerPortRequired})
+		errors = append(errors, newValidationError(port, ErrContainerPortRequired))
 	} else {
 		portNum, err := strconv.Atoi(containerPort.Value)
 		if err != nil {
-			errors = append(errors, ValidationError{Line: containerPort.Line, Message: "containerPort must be int"})
-		} else if portNum <= 0 || portNum >= 65536 {
-			errors = append(errors, ValidationError{Line: containerPort.Line, Message: ErrContainerPortOutOfRange})
+			errors = append(errors, newValidationError(containerPort, "containerPort must be int"))
+		} else {
+			// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Явная проверка отрицательных значений и значений вне диапазона
+			if portNum <= 0 || portNum >= 65536 {
+				errors = append(errors, newValidationError(containerPort, ErrContainerPortOutOfRange))
+			}
 		}
 	}
 
 	if protocol, exists := fields["protocol"]; exists && protocol != nil && protocol.Value != "" {
 		if protocol.Value != "TCP" && protocol.Value != "UDP" {
-			errors = append(errors, ValidationError{Line: protocol.Line, Message: fmt.Sprintf(ErrProtocolUnsupported, protocol.Value)})
+			errors = append(errors, newValidationError(protocol, fmt.Sprintf(ErrProtocolUnsupported, protocol.Value)))
 		}
 	}
 
@@ -405,7 +431,7 @@ func validateProbe(probe *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	if probe.Kind != yaml.MappingNode {
-		return []ValidationError{{Line: probe.Line, Message: fmt.Sprintf("probe %s", ErrMustBeMapping)}}
+		return []ValidationError{newValidationError(probe, fmt.Sprintf("probe %s", ErrMustBeMapping))}
 	}
 
 	fields := make(map[string]*yaml.Node)
@@ -420,7 +446,7 @@ func validateProbe(probe *yaml.Node) []ValidationError {
 	}
 
 	if httpGet, exists := fields["httpGet"]; !exists || httpGet == nil {
-		errors = append(errors, ValidationError{Line: probe.Line, Message: ErrHTTPGetRequired})
+		errors = append(errors, newValidationError(probe, ErrHTTPGetRequired))
 	} else {
 		errors = append(errors, validateHTTPGet(httpGet)...)
 	}
@@ -432,7 +458,7 @@ func validateHTTPGet(httpGet *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	if httpGet.Kind != yaml.MappingNode {
-		return []ValidationError{{Line: httpGet.Line, Message: fmt.Sprintf("httpGet %s", ErrMustBeMapping)}}
+		return []ValidationError{newValidationError(httpGet, fmt.Sprintf("httpGet %s", ErrMustBeMapping))}
 	}
 
 	fields := make(map[string]*yaml.Node)
@@ -447,25 +473,25 @@ func validateHTTPGet(httpGet *yaml.Node) []ValidationError {
 	}
 
 	if path, exists := fields["path"]; !exists || path == nil {
-		errors = append(errors, ValidationError{Line: httpGet.Line, Message: ErrPathRequired})
+		errors = append(errors, newValidationError(httpGet, ErrPathRequired))
 	} else if path.Value == "" {
-		errors = append(errors, ValidationError{Line: path.Line, Message: ErrPathRequired})
+		errors = append(errors, newValidationError(path, ErrPathRequired))
 	} else if !strings.HasPrefix(path.Value, "/") {
-		errors = append(errors, ValidationError{Line: path.Line, Message: fmt.Sprintf(ErrPathInvalidFormat, path.Value)})
+		errors = append(errors, newValidationError(path, fmt.Sprintf(ErrPathInvalidFormat, path.Value)))
 	}
 
 	if port, exists := fields["port"]; !exists || port == nil {
-		errors = append(errors, ValidationError{Line: httpGet.Line, Message: ErrPortRequired})
+		errors = append(errors, newValidationError(httpGet, ErrPortRequired))
 	} else {
 		portNum, err := strconv.Atoi(port.Value)
 		if err != nil {
-			errors = append(errors, ValidationError{Line: port.Line, Message: "port must be int"})
+			errors = append(errors, newValidationError(port, "port must be int"))
 		} else {
 			// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Явная проверка отрицательных значений
 			if portNum <= 0 {
-				errors = append(errors, ValidationError{Line: port.Line, Message: ErrPortOutOfRange})
+				errors = append(errors, newValidationError(port, ErrPortOutOfRange))
 			} else if portNum >= 65536 {
-				errors = append(errors, ValidationError{Line: port.Line, Message: ErrPortOutOfRange})
+				errors = append(errors, newValidationError(port, ErrPortOutOfRange))
 			}
 		}
 	}
