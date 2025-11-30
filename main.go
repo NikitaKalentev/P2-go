@@ -99,11 +99,11 @@ func validateYAML(root *yaml.Node, filename string) []ValidationError {
 	} else {
 		nameNode := findNode(metadataNode, "name")
 		if nameNode == nil {
-			errors = append(errors, ValidationError{Line: metadataNode.Line, Message: "metadata.name is required"})
+			errors = append(errors, ValidationError{Line: metadataNode.Line, Message: "name is required"})
 		} else if nameNode.Value == "" {
 			errors = append(errors, ValidationError{
 				Line:    nameNode.Line,
-				Message: "metadata.name is required",
+				Message: "name is required",
 			})
 		}
 	}
@@ -114,7 +114,7 @@ func validateYAML(root *yaml.Node, filename string) []ValidationError {
 	} else {
 		// Validate OS
 		osNode := findNode(specNode, "os")
-		if osNode != nil && osNode.Value != "" {
+		if osNode != nil {
 			if osNode.Value != "linux" && osNode.Value != "windows" {
 				errors = append(errors, ValidationError{
 					Line:    osNode.Line,
@@ -180,7 +180,7 @@ func validateContainer(containerNode *yaml.Node, index int) []ValidationError {
 	if resourcesNode == nil {
 		errors = append(errors, ValidationError{Line: containerNode.Line, Message: "resources is required"})
 	} else {
-		resourceErrors := validateResources(resourcesNode, index)
+		resourceErrors := validateResources(resourcesNode)
 		errors = append(errors, resourceErrors...)
 	}
 
@@ -188,7 +188,7 @@ func validateContainer(containerNode *yaml.Node, index int) []ValidationError {
 	portsNode := findNode(containerNode, "ports")
 	if portsNode != nil {
 		for i, portNode := range portsNode.Content {
-			portErrors := validatePort(portNode, index, i)
+			portErrors := validatePort(portNode, i)
 			errors = append(errors, portErrors...)
 		}
 	}
@@ -196,20 +196,20 @@ func validateContainer(containerNode *yaml.Node, index int) []ValidationError {
 	// Validate probes if present
 	readinessProbeNode := findNode(containerNode, "readinessProbe")
 	if readinessProbeNode != nil {
-		probeErrors := validateProbe(readinessProbeNode, index, "readinessProbe")
+		probeErrors := validateProbe(readinessProbeNode, "readinessProbe")
 		errors = append(errors, probeErrors...)
 	}
 
 	livenessProbeNode := findNode(containerNode, "livenessProbe")
 	if livenessProbeNode != nil {
-		probeErrors := validateProbe(livenessProbeNode, index, "livenessProbe")
+		probeErrors := validateProbe(livenessProbeNode, "livenessProbe")
 		errors = append(errors, probeErrors...)
 	}
 
 	return errors
 }
 
-func validatePort(portNode *yaml.Node, containerIndex, portIndex int) []ValidationError {
+func validatePort(portNode *yaml.Node, portIndex int) []ValidationError {
 	var errors []ValidationError
 
 	containerPortNode := findNode(portNode, "containerPort")
@@ -243,7 +243,7 @@ func validatePort(portNode *yaml.Node, containerIndex, portIndex int) []Validati
 	return errors
 }
 
-func validateProbe(probeNode *yaml.Node, containerIndex int, probeType string) []ValidationError {
+func validateProbe(probeNode *yaml.Node, probeType string) []ValidationError {
 	var errors []ValidationError
 
 	httpGetNode := findNode(probeNode, "httpGet")
@@ -287,25 +287,25 @@ func validateProbe(probeNode *yaml.Node, containerIndex int, probeType string) [
 	return errors
 }
 
-func validateResources(resourcesNode *yaml.Node, containerIndex int) []ValidationError {
+func validateResources(resourcesNode *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	requestsNode := findNode(resourcesNode, "requests")
 	if requestsNode != nil {
-		requestErrors := validateResourceMap(requestsNode, containerIndex, "requests")
+		requestErrors := validateResourceMap(requestsNode, "requests")
 		errors = append(errors, requestErrors...)
 	}
 
 	limitsNode := findNode(resourcesNode, "limits")
 	if limitsNode != nil {
-		limitErrors := validateResourceMap(limitsNode, containerIndex, "limits")
+		limitErrors := validateResourceMap(limitsNode, "limits")
 		errors = append(errors, limitErrors...)
 	}
 
 	return errors
 }
 
-func validateResourceMap(resourceMapNode *yaml.Node, containerIndex int, resourceType string) []ValidationError {
+func validateResourceMap(resourceMapNode *yaml.Node, resourceType string) []ValidationError {
 	var errors []ValidationError
 
 	for i := 0; i < len(resourceMapNode.Content); i += 2 {
@@ -323,16 +323,11 @@ func validateResourceMap(resourceMapNode *yaml.Node, containerIndex int, resourc
 					Message: "cpu must be int",
 				})
 			} else {
-				cpu, err := strconv.Atoi(valueNode.Value)
+				_, err := strconv.Atoi(valueNode.Value)
 				if err != nil {
 					errors = append(errors, ValidationError{
 						Line:    valueNode.Line,
 						Message: "cpu must be int",
-					})
-				} else if cpu < 0 {
-					errors = append(errors, ValidationError{
-						Line:    valueNode.Line,
-						Message: "cpu value out of range",
 					})
 				}
 			}
