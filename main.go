@@ -37,7 +37,6 @@ func main() {
 
 	errors := validateYAML(&root)
 	if len(errors) > 0 {
-		// ВАЖНО: Выводим ошибки в stderr
 		for _, err := range errors {
 			fmt.Fprintf(os.Stderr, "%s:%d %s\n", filename, err.Line, err.Message)
 		}
@@ -66,39 +65,40 @@ func validateYAML(root *yaml.Node) []ValidationError {
 func validateTopLevel(doc *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
-	fields := map[string]*yaml.Node{}
+	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(doc.Content); i += 2 {
-		if i+1 < len(doc.Content) {
-			key := doc.Content[i]
-			value := doc.Content[i+1]
-			fields[key.Value] = value
+		if i+1 >= len(doc.Content) {
+			continue
 		}
+		key := doc.Content[i]
+		value := doc.Content[i+1]
+		fields[key.Value] = value
 	}
 
 	// apiVersion
 	if apiVersion, exists := fields["apiVersion"]; !exists {
-		errors = append(errors, ValidationError{Line: 1, Message: "apiVersion is required"})
+		errors = append(errors, ValidationError{Line: doc.Line, Message: "apiVersion is required"})
 	} else if apiVersion.Value != "v1" {
 		errors = append(errors, ValidationError{Line: apiVersion.Line, Message: fmt.Sprintf("apiVersion has unsupported value '%s'", apiVersion.Value)})
 	}
 
 	// kind
 	if kind, exists := fields["kind"]; !exists {
-		errors = append(errors, ValidationError{Line: 1, Message: "kind is required"})
+		errors = append(errors, ValidationError{Line: doc.Line, Message: "kind is required"})
 	} else if kind.Value != "Pod" {
 		errors = append(errors, ValidationError{Line: kind.Line, Message: fmt.Sprintf("kind has unsupported value '%s'", kind.Value)})
 	}
 
 	// metadata
 	if metadata, exists := fields["metadata"]; !exists {
-		errors = append(errors, ValidationError{Line: 1, Message: "metadata is required"})
+		errors = append(errors, ValidationError{Line: doc.Line, Message: "metadata is required"})
 	} else {
 		errors = append(errors, validateMetadata(metadata)...)
 	}
 
 	// spec
 	if spec, exists := fields["spec"]; !exists {
-		errors = append(errors, ValidationError{Line: 1, Message: "spec is required"})
+		errors = append(errors, ValidationError{Line: doc.Line, Message: "spec is required"})
 	} else {
 		errors = append(errors, validateSpec(spec)...)
 	}
@@ -109,13 +109,14 @@ func validateTopLevel(doc *yaml.Node) []ValidationError {
 func validateMetadata(metadata *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
-	fields := map[string]*yaml.Node{}
+	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(metadata.Content); i += 2 {
-		if i+1 < len(metadata.Content) {
-			key := metadata.Content[i]
-			value := metadata.Content[i+1]
-			fields[key.Value] = value
+		if i+1 >= len(metadata.Content) {
+			continue
 		}
+		key := metadata.Content[i]
+		value := metadata.Content[i+1]
+		fields[key.Value] = value
 	}
 
 	if name, exists := fields["name"]; !exists {
@@ -130,13 +131,14 @@ func validateMetadata(metadata *yaml.Node) []ValidationError {
 func validateSpec(spec *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
-	fields := map[string]*yaml.Node{}
+	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(spec.Content); i += 2 {
-		if i+1 < len(spec.Content) {
-			key := spec.Content[i]
-			value := spec.Content[i+1]
-			fields[key.Value] = value
+		if i+1 >= len(spec.Content) {
+			continue
 		}
+		key := spec.Content[i]
+		value := spec.Content[i+1]
+		fields[key.Value] = value
 	}
 
 	// os
@@ -149,6 +151,8 @@ func validateSpec(spec *yaml.Node) []ValidationError {
 	// containers
 	if containers, exists := fields["containers"]; !exists {
 		errors = append(errors, ValidationError{Line: spec.Line, Message: "containers is required"})
+	} else if containers.Kind != yaml.SequenceNode {
+		errors = append(errors, ValidationError{Line: containers.Line, Message: "containers must be a list"})
 	} else if len(containers.Content) == 0 {
 		errors = append(errors, ValidationError{Line: containers.Line, Message: "containers is required"})
 	} else {
@@ -163,13 +167,14 @@ func validateSpec(spec *yaml.Node) []ValidationError {
 func validateContainer(container *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
-	fields := map[string]*yaml.Node{}
+	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(container.Content); i += 2 {
-		if i+1 < len(container.Content) {
-			key := container.Content[i]
-			value := container.Content[i+1]
-			fields[key.Value] = value
+		if i+1 >= len(container.Content) {
+			continue
 		}
+		key := container.Content[i]
+		value := container.Content[i+1]
+		fields[key.Value] = value
 	}
 
 	// name
@@ -199,8 +204,10 @@ func validateContainer(container *yaml.Node) []ValidationError {
 
 	// ports
 	if ports, exists := fields["ports"]; exists {
-		for _, port := range ports.Content {
-			errors = append(errors, validatePort(port)...)
+		if ports.Kind == yaml.SequenceNode {
+			for _, port := range ports.Content {
+				errors = append(errors, validatePort(port)...)
+			}
 		}
 	}
 
@@ -220,13 +227,14 @@ func validateContainer(container *yaml.Node) []ValidationError {
 func validateResources(resources *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
-	fields := map[string]*yaml.Node{}
+	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(resources.Content); i += 2 {
-		if i+1 < len(resources.Content) {
-			key := resources.Content[i]
-			value := resources.Content[i+1]
-			fields[key.Value] = value
+		if i+1 >= len(resources.Content) {
+			continue
 		}
+		key := resources.Content[i]
+		value := resources.Content[i+1]
+		fields[key.Value] = value
 	}
 
 	if requests, exists := fields["requests"]; exists {
@@ -244,29 +252,35 @@ func validateResourceMap(resourceMap *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	for i := 0; i < len(resourceMap.Content); i += 2 {
-		if i+1 < len(resourceMap.Content) {
-			key := resourceMap.Content[i]
-			value := resourceMap.Content[i+1]
+		if i+1 >= len(resourceMap.Content) {
+			continue
+		}
+		key := resourceMap.Content[i]
+		value := resourceMap.Content[i+1]
 
-			switch key.Value {
-			case "cpu":
-				// ПРОСТАЯ ПРОВЕРКА: CPU должен быть непустым
-				if value.Value == "" {
-					errors = append(errors, ValidationError{Line: value.Line, Message: "cpu value is required"})
+		switch key.Value {
+		case "cpu":
+			// CPU должен быть положительным целым числом
+			if value.Value == "" {
+				errors = append(errors, ValidationError{Line: value.Line, Message: "cpu value is required"})
+			} else {
+				// Пробуем распарсить как число (убираем пробелы)
+				cpuVal := strings.TrimSpace(value.Value)
+				if num, err := strconv.Atoi(cpuVal); err != nil || num <= 0 {
+					errors = append(errors, ValidationError{Line: value.Line, Message: "cpu must be int"})
 				}
-				// Убрана сложная проверка - принимаем любые непустые значения
-			case "memory":
-				if !memoryRegex.MatchString(value.Value) {
-					errors = append(errors, ValidationError{Line: value.Line, Message: fmt.Sprintf("memory has invalid format '%s'", value.Value)})
-				} else {
-					numStr := value.Value[:len(value.Value)-2]
-					if num, err := strconv.Atoi(numStr); err != nil || num <= 0 {
-						errors = append(errors, ValidationError{Line: value.Line, Message: "memory value out of range"})
-					}
-				}
-			default:
-				errors = append(errors, ValidationError{Line: key.Line, Message: fmt.Sprintf("%s has unsupported value", key.Value)})
 			}
+		case "memory":
+			if !memoryRegex.MatchString(value.Value) {
+				errors = append(errors, ValidationError{Line: value.Line, Message: fmt.Sprintf("memory has invalid format '%s'", value.Value)})
+			} else {
+				numStr := value.Value[:len(value.Value)-2]
+				if num, err := strconv.Atoi(numStr); err != nil || num <= 0 {
+					errors = append(errors, ValidationError{Line: value.Line, Message: "memory value out of range"})
+				}
+			}
+		default:
+			errors = append(errors, ValidationError{Line: key.Line, Message: fmt.Sprintf("%s has unsupported value", key.Value)})
 		}
 	}
 
@@ -276,13 +290,14 @@ func validateResourceMap(resourceMap *yaml.Node) []ValidationError {
 func validatePort(port *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
-	fields := map[string]*yaml.Node{}
+	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(port.Content); i += 2 {
-		if i+1 < len(port.Content) {
-			key := port.Content[i]
-			value := port.Content[i+1]
-			fields[key.Value] = value
+		if i+1 >= len(port.Content) {
+			continue
 		}
+		key := port.Content[i]
+		value := port.Content[i+1]
+		fields[key.Value] = value
 	}
 
 	if containerPort, exists := fields["containerPort"]; !exists {
@@ -308,13 +323,14 @@ func validatePort(port *yaml.Node) []ValidationError {
 func validateProbe(probe *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
-	fields := map[string]*yaml.Node{}
+	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(probe.Content); i += 2 {
-		if i+1 < len(probe.Content) {
-			key := probe.Content[i]
-			value := probe.Content[i+1]
-			fields[key.Value] = value
+		if i+1 >= len(probe.Content) {
+			continue
 		}
+		key := probe.Content[i]
+		value := probe.Content[i+1]
+		fields[key.Value] = value
 	}
 
 	if httpGet, exists := fields["httpGet"]; !exists {
@@ -329,13 +345,14 @@ func validateProbe(probe *yaml.Node) []ValidationError {
 func validateHTTPGet(httpGet *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
-	fields := map[string]*yaml.Node{}
+	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(httpGet.Content); i += 2 {
-		if i+1 < len(httpGet.Content) {
-			key := httpGet.Content[i]
-			value := httpGet.Content[i+1]
-			fields[key.Value] = value
+		if i+1 >= len(httpGet.Content) {
+			continue
 		}
+		key := httpGet.Content[i]
+		value := httpGet.Content[i+1]
+		fields[key.Value] = value
 	}
 
 	if path, exists := fields["path"]; !exists {
