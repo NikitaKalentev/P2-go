@@ -65,14 +65,18 @@ func validateYAML(root *yaml.Node) []ValidationError {
 func validateTopLevel(doc *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
+	// Простая проверка - если не map, то ошибка
+	if doc.Kind != yaml.MappingNode {
+		return []ValidationError{{Line: doc.Line, Message: "Invalid YAML structure"}}
+	}
+
 	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(doc.Content); i += 2 {
-		if i+1 >= len(doc.Content) {
-			continue
+		if i+1 < len(doc.Content) {
+			key := doc.Content[i]
+			value := doc.Content[i+1]
+			fields[key.Value] = value
 		}
-		key := doc.Content[i]
-		value := doc.Content[i+1]
-		fields[key.Value] = value
 	}
 
 	// apiVersion
@@ -109,14 +113,17 @@ func validateTopLevel(doc *yaml.Node) []ValidationError {
 func validateMetadata(metadata *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
+	if metadata.Kind != yaml.MappingNode {
+		return []ValidationError{{Line: metadata.Line, Message: "metadata must be a mapping"}}
+	}
+
 	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(metadata.Content); i += 2 {
-		if i+1 >= len(metadata.Content) {
-			continue
+		if i+1 < len(metadata.Content) {
+			key := metadata.Content[i]
+			value := metadata.Content[i+1]
+			fields[key.Value] = value
 		}
-		key := metadata.Content[i]
-		value := metadata.Content[i+1]
-		fields[key.Value] = value
 	}
 
 	if name, exists := fields["name"]; !exists {
@@ -131,14 +138,17 @@ func validateMetadata(metadata *yaml.Node) []ValidationError {
 func validateSpec(spec *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
+	if spec.Kind != yaml.MappingNode {
+		return []ValidationError{{Line: spec.Line, Message: "spec must be a mapping"}}
+	}
+
 	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(spec.Content); i += 2 {
-		if i+1 >= len(spec.Content) {
-			continue
+		if i+1 < len(spec.Content) {
+			key := spec.Content[i]
+			value := spec.Content[i+1]
+			fields[key.Value] = value
 		}
-		key := spec.Content[i]
-		value := spec.Content[i+1]
-		fields[key.Value] = value
 	}
 
 	// os
@@ -167,14 +177,17 @@ func validateSpec(spec *yaml.Node) []ValidationError {
 func validateContainer(container *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
+	if container.Kind != yaml.MappingNode {
+		return []ValidationError{{Line: container.Line, Message: "container must be a mapping"}}
+	}
+
 	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(container.Content); i += 2 {
-		if i+1 >= len(container.Content) {
-			continue
+		if i+1 < len(container.Content) {
+			key := container.Content[i]
+			value := container.Content[i+1]
+			fields[key.Value] = value
 		}
-		key := container.Content[i]
-		value := container.Content[i+1]
-		fields[key.Value] = value
 	}
 
 	// name
@@ -227,60 +240,65 @@ func validateContainer(container *yaml.Node) []ValidationError {
 func validateResources(resources *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
+	if resources.Kind != yaml.MappingNode {
+		return []ValidationError{{Line: resources.Line, Message: "resources must be a mapping"}}
+	}
+
 	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(resources.Content); i += 2 {
-		if i+1 >= len(resources.Content) {
-			continue
+		if i+1 < len(resources.Content) {
+			key := resources.Content[i]
+			value := resources.Content[i+1]
+			fields[key.Value] = value
 		}
-		key := resources.Content[i]
-		value := resources.Content[i+1]
-		fields[key.Value] = value
 	}
 
 	if requests, exists := fields["requests"]; exists {
-		errors = append(errors, validateResourceMap(requests)...)
+		errors = append(errors, validateResourceMap(requests, "requests")...)
 	}
 
 	if limits, exists := fields["limits"]; exists {
-		errors = append(errors, validateResourceMap(limits)...)
+		errors = append(errors, validateResourceMap(limits, "limits")...)
 	}
 
 	return errors
 }
 
-func validateResourceMap(resourceMap *yaml.Node) []ValidationError {
+func validateResourceMap(resourceMap *yaml.Node, context string) []ValidationError {
 	var errors []ValidationError
 
-	for i := 0; i < len(resourceMap.Content); i += 2 {
-		if i+1 >= len(resourceMap.Content) {
-			continue
-		}
-		key := resourceMap.Content[i]
-		value := resourceMap.Content[i+1]
+	if resourceMap.Kind != yaml.MappingNode {
+		return []ValidationError{{Line: resourceMap.Line, Message: fmt.Sprintf("%s must be a mapping", context)}}
+	}
 
-		switch key.Value {
-		case "cpu":
-			// CPU должен быть положительным целым числом
-			if value.Value == "" {
-				errors = append(errors, ValidationError{Line: value.Line, Message: "cpu value is required"})
-			} else {
-				// Пробуем распарсить как число (убираем пробелы)
-				cpuVal := strings.TrimSpace(value.Value)
-				if num, err := strconv.Atoi(cpuVal); err != nil || num <= 0 {
+	for i := 0; i < len(resourceMap.Content); i += 2 {
+		if i+1 < len(resourceMap.Content) {
+			key := resourceMap.Content[i]
+			value := resourceMap.Content[i+1]
+
+			switch key.Value {
+			case "cpu":
+				// CPU должен быть положительным целым числом
+				if value.Value == "" {
 					errors = append(errors, ValidationError{Line: value.Line, Message: "cpu must be int"})
+				} else {
+					// Пробуем распарсить как число
+					if num, err := strconv.Atoi(value.Value); err != nil || num <= 0 {
+						errors = append(errors, ValidationError{Line: value.Line, Message: "cpu must be int"})
+					}
 				}
-			}
-		case "memory":
-			if !memoryRegex.MatchString(value.Value) {
-				errors = append(errors, ValidationError{Line: value.Line, Message: fmt.Sprintf("memory has invalid format '%s'", value.Value)})
-			} else {
-				numStr := value.Value[:len(value.Value)-2]
-				if num, err := strconv.Atoi(numStr); err != nil || num <= 0 {
-					errors = append(errors, ValidationError{Line: value.Line, Message: "memory value out of range"})
+			case "memory":
+				if !memoryRegex.MatchString(value.Value) {
+					errors = append(errors, ValidationError{Line: value.Line, Message: fmt.Sprintf("memory has invalid format '%s'", value.Value)})
+				} else {
+					numStr := value.Value[:len(value.Value)-2]
+					if num, err := strconv.Atoi(numStr); err != nil || num <= 0 {
+						errors = append(errors, ValidationError{Line: value.Line, Message: "memory value out of range"})
+					}
 				}
+			default:
+				errors = append(errors, ValidationError{Line: key.Line, Message: fmt.Sprintf("%s has unsupported value", key.Value)})
 			}
-		default:
-			errors = append(errors, ValidationError{Line: key.Line, Message: fmt.Sprintf("%s has unsupported value", key.Value)})
 		}
 	}
 
@@ -290,14 +308,17 @@ func validateResourceMap(resourceMap *yaml.Node) []ValidationError {
 func validatePort(port *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
+	if port.Kind != yaml.MappingNode {
+		return []ValidationError{{Line: port.Line, Message: "port must be a mapping"}}
+	}
+
 	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(port.Content); i += 2 {
-		if i+1 >= len(port.Content) {
-			continue
+		if i+1 < len(port.Content) {
+			key := port.Content[i]
+			value := port.Content[i+1]
+			fields[key.Value] = value
 		}
-		key := port.Content[i]
-		value := port.Content[i+1]
-		fields[key.Value] = value
 	}
 
 	if containerPort, exists := fields["containerPort"]; !exists {
@@ -323,14 +344,17 @@ func validatePort(port *yaml.Node) []ValidationError {
 func validateProbe(probe *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
+	if probe.Kind != yaml.MappingNode {
+		return []ValidationError{{Line: probe.Line, Message: "probe must be a mapping"}}
+	}
+
 	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(probe.Content); i += 2 {
-		if i+1 >= len(probe.Content) {
-			continue
+		if i+1 < len(probe.Content) {
+			key := probe.Content[i]
+			value := probe.Content[i+1]
+			fields[key.Value] = value
 		}
-		key := probe.Content[i]
-		value := probe.Content[i+1]
-		fields[key.Value] = value
 	}
 
 	if httpGet, exists := fields["httpGet"]; !exists {
@@ -345,14 +369,17 @@ func validateProbe(probe *yaml.Node) []ValidationError {
 func validateHTTPGet(httpGet *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
+	if httpGet.Kind != yaml.MappingNode {
+		return []ValidationError{{Line: httpGet.Line, Message: "httpGet must be a mapping"}}
+	}
+
 	fields := make(map[string]*yaml.Node)
 	for i := 0; i < len(httpGet.Content); i += 2 {
-		if i+1 >= len(httpGet.Content) {
-			continue
+		if i+1 < len(httpGet.Content) {
+			key := httpGet.Content[i]
+			value := httpGet.Content[i+1]
+			fields[key.Value] = value
 		}
-		key := httpGet.Content[i]
-		value := httpGet.Content[i+1]
-		fields[key.Value] = value
 	}
 
 	if path, exists := fields["path"]; !exists {
