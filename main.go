@@ -46,7 +46,7 @@ func validateFile(filename string) error {
 		return err
 	}
 
-	errors := validateYAML(&root, filename)
+	errors := validateYAML(&root)
 	if len(errors) > 0 {
 		for _, err := range errors {
 			fmt.Fprintf(os.Stderr, "%s:%d %s\n", filename, err.Line, err.Message)
@@ -57,7 +57,7 @@ func validateFile(filename string) error {
 	return nil
 }
 
-func validateYAML(root *yaml.Node, filename string) []ValidationError {
+func validateYAML(root *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	if len(root.Content) == 0 {
@@ -130,8 +130,8 @@ func validateYAML(root *yaml.Node, filename string) []ValidationError {
 		} else if len(containersNode.Content) == 0 {
 			errors = append(errors, ValidationError{Line: containersNode.Line, Message: "containers is required"})
 		} else {
-			for i, containerNode := range containersNode.Content {
-				containerErrors := validateContainer(containerNode, i)
+			for _, containerNode := range containersNode.Content {
+				containerErrors := validateContainer(containerNode)
 				errors = append(errors, containerErrors...)
 			}
 		}
@@ -140,7 +140,7 @@ func validateYAML(root *yaml.Node, filename string) []ValidationError {
 	return errors
 }
 
-func validateContainer(containerNode *yaml.Node, index int) []ValidationError {
+func validateContainer(containerNode *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	// Validate container name
@@ -187,8 +187,8 @@ func validateContainer(containerNode *yaml.Node, index int) []ValidationError {
 	// Validate ports if present
 	portsNode := findNode(containerNode, "ports")
 	if portsNode != nil {
-		for i, portNode := range portsNode.Content {
-			portErrors := validatePort(portNode, i)
+		for _, portNode := range portsNode.Content {
+			portErrors := validatePort(portNode)
 			errors = append(errors, portErrors...)
 		}
 	}
@@ -196,20 +196,20 @@ func validateContainer(containerNode *yaml.Node, index int) []ValidationError {
 	// Validate probes if present
 	readinessProbeNode := findNode(containerNode, "readinessProbe")
 	if readinessProbeNode != nil {
-		probeErrors := validateProbe(readinessProbeNode, "readinessProbe")
+		probeErrors := validateProbe(readinessProbeNode)
 		errors = append(errors, probeErrors...)
 	}
 
 	livenessProbeNode := findNode(containerNode, "livenessProbe")
 	if livenessProbeNode != nil {
-		probeErrors := validateProbe(livenessProbeNode, "livenessProbe")
+		probeErrors := validateProbe(livenessProbeNode)
 		errors = append(errors, probeErrors...)
 	}
 
 	return errors
 }
 
-func validatePort(portNode *yaml.Node, portIndex int) []ValidationError {
+func validatePort(portNode *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	containerPortNode := findNode(portNode, "containerPort")
@@ -243,7 +243,7 @@ func validatePort(portNode *yaml.Node, portIndex int) []ValidationError {
 	return errors
 }
 
-func validateProbe(probeNode *yaml.Node, probeType string) []ValidationError {
+func validateProbe(probeNode *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	httpGetNode := findNode(probeNode, "httpGet")
@@ -292,20 +292,20 @@ func validateResources(resourcesNode *yaml.Node) []ValidationError {
 
 	requestsNode := findNode(resourcesNode, "requests")
 	if requestsNode != nil {
-		requestErrors := validateResourceMap(requestsNode, "requests")
+		requestErrors := validateResourceMap(requestsNode)
 		errors = append(errors, requestErrors...)
 	}
 
 	limitsNode := findNode(resourcesNode, "limits")
 	if limitsNode != nil {
-		limitErrors := validateResourceMap(limitsNode, "limits")
+		limitErrors := validateResourceMap(limitsNode)
 		errors = append(errors, limitErrors...)
 	}
 
 	return errors
 }
 
-func validateResourceMap(resourceMapNode *yaml.Node, resourceType string) []ValidationError {
+func validateResourceMap(resourceMapNode *yaml.Node) []ValidationError {
 	var errors []ValidationError
 
 	for i := 0; i < len(resourceMapNode.Content); i += 2 {
