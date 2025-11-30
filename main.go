@@ -230,17 +230,17 @@ func validateResources(resources *yaml.Node) []ValidationError {
 	}
 
 	if requests, exists := fields["requests"]; exists {
-		errors = append(errors, validateResourceMap(requests)...)
+		errors = append(errors, validateResourceMap(requests, "requests")...)
 	}
 
 	if limits, exists := fields["limits"]; exists {
-		errors = append(errors, validateResourceMap(limits)...)
+		errors = append(errors, validateResourceMap(limits, "limits")...)
 	}
 
 	return errors
 }
 
-func validateResourceMap(resourceMap *yaml.Node) []ValidationError {
+func validateResourceMap(resourceMap *yaml.Node, resourceType string) []ValidationError {
 	var errors []ValidationError
 
 	for i := 0; i < len(resourceMap.Content); i += 2 {
